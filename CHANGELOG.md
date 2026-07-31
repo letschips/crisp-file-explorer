@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.42] - 2026-07-31 (Online License Check Fix)
+
+### Changed
+- 在线设备校验改用 Obsidian requestUrl（与 ASR/Annotations 一致），修复 Electron/CSP 环境下 fetch 校验失败静默降级的问题。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过。
+
 ## [0.2.41] - 2026-07-31 (License Key Rotation)
 
 ### Changed

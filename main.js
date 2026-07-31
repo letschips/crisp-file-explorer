@@ -13,7 +13,7 @@
   product. Keep this attribution visible in modified or derived versions.
 */
 
-const { Plugin, PluginSettingTab, Setting, Notice, normalizePath } = require("obsidian");
+const { Plugin, PluginSettingTab, Setting, Notice, normalizePath, requestUrl } = require("obsidian");
 
 const CRISP_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAiz41HIDpD59SH3DjKnovUO+EEhTJXjvmiug/ev9t4ZQ=
@@ -91,7 +91,8 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explo
     try {
       const app = (window.app);
       const deviceId = app?.appId || (app?.vault?.getName ? "vault-" + encodeURIComponent(app.vault.getName()) : "device-default");
-      const response = await fetch("https://crisp-license.helloherve-xsn.workers.dev/api/verify-device", {
+      const res = await requestUrl({
+        url: "https://crisp-license.helloherve-xsn.workers.dev/api/verify-device",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -101,8 +102,8 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explo
           pluginId: targetPluginId
         })
       });
-      if (response.ok) {
-        const cloudResult = await response.json();
+      if (res.status === 200 && res.json) {
+        const cloudResult = res.json;
         if (cloudResult.valid === false) {
           return { valid: false, reason: cloudResult.reason || "设备数已达上限" };
         }
