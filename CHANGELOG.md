@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.43] - 2026-07-31 (License Verification Update)
+
+### Changed
+- 授权校验机制更新：此版本仅接受新版授权码，旧版授权码需联系重新签发。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过。
+
 ## [0.2.42] - 2026-07-31 (Online License Check Fix)
 
 ### Changed
