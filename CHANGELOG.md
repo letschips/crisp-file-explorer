@@ -8,10 +8,10 @@
 ### Verification
 - JavaScript 语法检查与完整自动回归测试通过。
 
-## [0.2.41] - 2026-07-31 (License Key Rotation)
+## [0.2.41] - 2026-07-31 (License Check Upgrade)
 
 ### Changed
-- 授权密钥轮换：启用过渡期双公钥校验（新公钥优先，旧公钥兜底），存量授权码不受影响。
+- 授权校验升级：启用双公钥过渡机制，存量授权码不受影响。
 
 ### Verification
 - JavaScript 语法检查与完整自动回归测试通过。
