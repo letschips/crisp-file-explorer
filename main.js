@@ -16,6 +16,10 @@
 const { Plugin, PluginSettingTab, Setting, Notice, normalizePath } = require("obsidian");
 
 const CRISP_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAiz41HIDpD59SH3DjKnovUO+EEhTJXjvmiug/ev9t4ZQ=
+-----END PUBLIC KEY-----`;
+
+const CRISP_LEGACY_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAzih+Socv+iNgjB4OJhlzVQRf9IrlVaLX3ZggFX0H9hc=
 -----END PUBLIC KEY-----`;
 
@@ -64,13 +68,24 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explo
     if (payload.expiresAt && new Date(payload.expiresAt).getTime() < Date.now()) {
       return { valid: false, reason: `授权已于 ${payload.expiresAt.split("T")[0]} 到期` };
     }
-    const publicKey = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM);
-    const isValid = await window.crypto.subtle.verify(
-      "Ed25519",
-      publicKey,
-      base64UrlToUint8Array(signatureBase64),
-      new TextEncoder().encode(payloadBase64)
-    );
+    // 过渡期双公钥：新公钥优先，旧公钥兜底（旧授权码仍有效）
+    let isValid = false;
+    for (const pem of [CRISP_PUBLIC_KEY_PEM, CRISP_LEGACY_PUBLIC_KEY_PEM]) {
+      try {
+        const publicKey = await importEd25519PublicKey(pem);
+        if (await window.crypto.subtle.verify(
+          "Ed25519",
+          publicKey,
+          base64UrlToUint8Array(signatureBase64),
+          new TextEncoder().encode(payloadBase64)
+        )) {
+          isValid = true;
+          break;
+        }
+      } catch {
+        // 尝试下一把公钥
+      }
+    }
     if (!isValid) return { valid: false, reason: "授权签名无效" };
 
     try {
