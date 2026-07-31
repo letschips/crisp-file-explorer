@@ -5,6 +5,6 @@
   "minAppVersion": "1.6.0",
   "description": "Adds a CrispToc-style animated rail, spring orb, and active-item motion to Obsidian's file explorer.",
   "author": "letschips",
-  "authorUrl": "https://github.com/Hervepotato",
+  "authorUrl": "https://github.com/letschips",
   "isDesktopOnly": true
 }
