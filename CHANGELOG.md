@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.47] - 2026-08-04 (Character Orb Size Tuning)
+
+### Changed
+- Spider-Man 保持 24px；其余静态人物 Orb（Character 1-3、Snorlax、Pikachu、Snorlax Face、Batman、Superman）缩小至 20px，避免左侧超出窗口被遮挡
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过
+- 在真实 Obsidian 中逐样式测量 orb 尺寸与窗口左缘位置
+
 ## [0.2.46] - 2026-08-04 (Character Orb Alignment)
 
 ### Changed

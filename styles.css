@@ -330,6 +330,19 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"] {
   overflow: visible;
 }
 
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character1"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character2"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character3"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlax"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"] {
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+}
+
 body.crisp-file-explorer-enabled .crisp-fe-orb.is-dragging {
   cursor: grabbing;
   box-shadow:
