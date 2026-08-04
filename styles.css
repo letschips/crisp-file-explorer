@@ -220,6 +220,14 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlax"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pokeball"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="bracelet"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="angry"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="squint"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="facemask"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pokerface"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="captainshield"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"] {
   left: calc(var(--crisp-fe-rail-x) + 3px);
   width: 22px;
@@ -268,7 +276,10 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="gear"] .crisp-fe-
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character3"]:hover .crisp-fe-orb-image,
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlax"]:hover .crisp-fe-orb-image,
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"]:hover .crisp-fe-orb-image,
-  body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"]:hover .crisp-fe-orb-image {
+  body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"]:hover .crisp-fe-orb-image,
+  body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"]:hover .crisp-fe-orb-image,
+  body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"]:hover .crisp-fe-orb-image,
+  body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"]:hover .crisp-fe-orb-image {
     animation: crisp-fe-character-breathe 900ms ease-in-out infinite;
   }
 }
@@ -304,7 +315,10 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character2"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character3"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlax"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"] {
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"] {
   left: calc(var(--crisp-fe-rail-x) + 5px);
   width: 22px;
   height: 22px;
@@ -355,7 +369,15 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="fan"].is-dragging
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="gear"].is-dragging,
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="alfresco"].is-dragging,
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="mercedes"].is-dragging,
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="taiga"].is-dragging {
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="taiga"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="angry"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="squint"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="facemask"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pokerface"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="captainshield"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"].is-dragging {
   box-shadow: none;
 }
 

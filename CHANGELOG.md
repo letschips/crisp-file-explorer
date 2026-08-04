@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.44] - 2026-08-04 (Expanded Orb Library)
+
+### Added
+- 新增 Angry、Squint、Face Mask、Poker Face、Captain America Shield 五种可旋转表情/盾牌 Orb
+- 新增 Batman、Superman、Spider-Man 三种静态人物 Orb，沿用 Pikachu 的直立静态与悬停呼吸逻辑
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过
+
 ## [0.2.43] - 2026-07-31 (License Verification Update)
 
 ### Changed

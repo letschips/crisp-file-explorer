@@ -589,6 +589,14 @@ const IMAGE_ORB_ASSETS = {
   alfresco: "assets/alfresco.svg",
   mercedes: "assets/mercedes.svg",
   taiga: "assets/taiga.svg",
+  angry: "assets/angry.svg",
+  squint: "assets/squint.svg",
+  facemask: "assets/face-mask.svg",
+  pokerface: "assets/poker-face.svg",
+  captainshield: "assets/captain-america-shield.svg",
+  batman: "assets/batman.svg",
+  superman: "assets/superman.svg",
+  spiderman: "assets/spider-man.svg",
 };
 
 const STATIC_ORB_STYLES = new Set([
@@ -598,6 +606,9 @@ const STATIC_ORB_STYLES = new Set([
   "snorlax",
   "pikachu",
   "snorlaxface",
+  "batman",
+  "superman",
+  "spiderman",
 ]);
 const RANDOM_DAILY_ORB_STYLES = [
   "soccer",
@@ -625,6 +636,14 @@ const RANDOM_DAILY_ORB_STYLES = [
   "alfresco",
   "mercedes",
   "taiga",
+  "angry",
+  "squint",
+  "facemask",
+  "pokerface",
+  "captainshield",
+  "batman",
+  "superman",
+  "spiderman",
 ];
 
 function normalizeOrbStyle(value) {
@@ -784,7 +803,7 @@ function soundStyleForOrb(orbStyle) {
   if (["redball", "orangeball", "blueball"].includes(orbStyle)) return "pop";
   if (orbStyle === "pokeball") return "spark";
   if (orbStyle === "bracelet") return "chime";
-  if (["character1", "character2", "character3", "shutup", "snorlax", "pikachu", "snorlaxface", "clown", "fear", "devil", "fan", "alfresco", "mercedes", "taiga"].includes(orbStyle)) return "bubble";
+  if (["character1", "character2", "character3", "shutup", "snorlax", "pikachu", "snorlaxface", "clown", "fear", "devil", "fan", "alfresco", "mercedes", "taiga", "angry", "squint", "facemask", "pokerface", "captainshield", "batman", "superman", "spiderman"].includes(orbStyle)) return "bubble";
   if (orbStyle === "gear") return "digital";
   return "soft";
 }
@@ -2274,6 +2293,14 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
           .addOption("alfresco", "Alfresco")
           .addOption("mercedes", "Mercedes-Benz")
           .addOption("taiga", "Taiga")
+          .addOption("angry", "Angry")
+          .addOption("squint", "Squint")
+          .addOption("facemask", "Face Mask")
+          .addOption("pokerface", "Poker Face")
+          .addOption("captainshield", "Captain America Shield")
+          .addOption("batman", "Batman")
+          .addOption("superman", "Superman")
+          .addOption("spiderman", "Spider-Man")
           .setValue(normalizeOrbStyle(this.plugin.settings.orbStyle))
           .onChange(async (value) => {
             const selectedStyle = normalizeOrbStyle(value);
