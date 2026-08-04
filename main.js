@@ -576,6 +576,8 @@ const IMAGE_ORB_ASSETS = {
   character1: "assets/character1.png",
   character2: "assets/character2.png",
   character3: "assets/character3.png",
+  character4: "assets/character4.svg",
+  character5: "assets/character5.svg",
   shutup: "assets/shut-up.svg",
   snorlax: "assets/snorlax.svg",
   pikachu: "assets/pikachu.svg",
@@ -603,6 +605,8 @@ const STATIC_ORB_STYLES = new Set([
   "character1",
   "character2",
   "character3",
+  "character4",
+  "character5",
   "snorlax",
   "pikachu",
   "snorlaxface",
@@ -623,6 +627,8 @@ const RANDOM_DAILY_ORB_STYLES = [
   "character1",
   "character2",
   "character3",
+  "character4",
+  "character5",
   "shutup",
   "snorlax",
   "pikachu",
@@ -803,7 +809,7 @@ function soundStyleForOrb(orbStyle) {
   if (["redball", "orangeball", "blueball"].includes(orbStyle)) return "pop";
   if (orbStyle === "pokeball") return "spark";
   if (orbStyle === "bracelet") return "chime";
-  if (["character1", "character2", "character3", "shutup", "snorlax", "pikachu", "snorlaxface", "clown", "fear", "devil", "fan", "alfresco", "mercedes", "taiga", "angry", "squint", "facemask", "pokerface", "captainshield", "batman", "superman", "spiderman"].includes(orbStyle)) return "bubble";
+  if (["character1", "character2", "character3", "character4", "character5", "shutup", "snorlax", "pikachu", "snorlaxface", "clown", "fear", "devil", "fan", "alfresco", "mercedes", "taiga", "angry", "squint", "facemask", "pokerface", "captainshield", "batman", "superman", "spiderman"].includes(orbStyle)) return "bubble";
   if (orbStyle === "gear") return "digital";
   return "soft";
 }
@@ -2280,6 +2286,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
           .addOption("character1", "Character 1")
           .addOption("character2", "Character 2")
           .addOption("character3", "Character 3")
+          .addOption("character4", "Character 4")
+          .addOption("character5", "Character 5")
           .addOption("shutup", "Shut Up")
           .addOption("snorlax", "Snorlax")
           .addOption("pikachu", "Pikachu")

@@ -1331,6 +1331,8 @@ test("all file-backed SVG orbs are bundled without machine-specific paths", () =
     batman: { asset: "assets/batman.svg", label: "Batman" },
     superman: { asset: "assets/superman.svg", label: "Superman" },
     spiderman: { asset: "assets/spider-man.svg", label: "Spider-Man" },
+    character4: { asset: "assets/character4.svg", label: "Character 4" },
+    character5: { asset: "assets/character5.svg", label: "Character 5" },
   })) {
     assert.ok(fs.existsSync(path.join(__dirname, "..", asset)), `${asset} should exist`);
     assert.match(source, new RegExp(`${style}:\\s*"${asset.replace("/", "\\/")}"`));
@@ -1358,7 +1360,7 @@ test("runtime assets contain no stale files or duplicate inline sports SVGs", ()
 
 test("new character SVGs stay upright while circular SVGs rotate", () => {
   const { IMAGE_ORB_ASSETS, RANDOM_DAILY_ORB_STYLES, STATIC_ORB_STYLES } = loadPluginRuntime();
-  const staticStyles = ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman"];
+  const staticStyles = ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5"];
   const rotatingStyles = ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield"];
 
   for (const style of [...staticStyles, ...rotatingStyles]) {
@@ -1711,7 +1713,7 @@ test("rotating image orbs receive rotation while character image orbs stay uprig
   // Static orbs: no rotation
   assert.equal(transformForStyle("character1", 300, 100, 45), "",
     "static orb (character1) should not receive rotation transform");
-  for (const style of ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman"]) {
+  for (const style of ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5"]) {
     assert.equal(transformForStyle(style, 300, 100, 45), "",
       `static orb (${style}) should not receive rotation transform`);
   }

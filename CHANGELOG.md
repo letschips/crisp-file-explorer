@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.48] - 2026-08-04 (Expanded Character Library)
+
+### Added
+- 新增 Character 4、Character 5 两种静态人物 Orb（SVG 素材）
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过
+
 ## [0.2.47] - 2026-08-04 (Character Orb Size Tuning)
 
 ### Changed

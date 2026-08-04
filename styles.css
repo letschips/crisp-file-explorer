@@ -228,6 +228,8 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="captainshield"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character4"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character5"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"] {
   left: calc(var(--crisp-fe-rail-x) + 3px);
   width: 22px;
@@ -274,6 +276,8 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="gear"] .crisp-fe-
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character1"]:hover .crisp-fe-orb-image,
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character2"]:hover .crisp-fe-orb-image,
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character3"]:hover .crisp-fe-orb-image,
+  body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character4"]:hover .crisp-fe-orb-image,
+  body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character5"]:hover .crisp-fe-orb-image,
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlax"]:hover .crisp-fe-orb-image,
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"]:hover .crisp-fe-orb-image,
   body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"]:hover .crisp-fe-orb-image,
@@ -318,7 +322,9 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"] {
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character4"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character5"] {
   left: var(--crisp-fe-rail-x);
   width: 24px;
   height: 24px;
@@ -337,7 +343,9 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlax"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"] {
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character4"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character5"] {
   width: 20px;
   height: 20px;
   margin: -10px 0 0 -10px;
@@ -367,6 +375,8 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="blueball"].is-dra
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character1"].is-dragging,
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character2"].is-dragging,
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character3"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character4"].is-dragging,
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character5"].is-dragging,
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="soccer"].is-dragging,
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="basketball"].is-dragging,
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="tennis"].is-dragging,
