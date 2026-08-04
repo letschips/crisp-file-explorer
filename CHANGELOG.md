@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.46] - 2026-08-04 (Character Orb Alignment)
+
+### Changed
+- 静态人物 Orb（Character 1-3、Snorlax、Pikachu、Snorlax Face、Batman、Superman、Spider-Man）放大至 24px，并左移居中到轨道竖线
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过
+- 在真实 Obsidian 中测量 orb 中心与竖线中心一致
+
 ## [0.2.45] - 2026-08-04 (Orb Asset Polish)
 
 ### Changed

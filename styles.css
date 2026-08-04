@@ -319,10 +319,10 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="spiderman"] {
-  left: calc(var(--crisp-fe-rail-x) + 5px);
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  left: var(--crisp-fe-rail-x);
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
   border: 0;
   background: transparent;
   border-radius: 0;
