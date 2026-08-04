@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.45] - 2026-08-04 (Orb Asset Polish)
+
+### Changed
+- Batman、Superman、Spider-Man 三个 Orb 素材去除白色背景与白色高光，仅保留图案主体，透明背景直接贴合轨道
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过
+
 ## [0.2.44] - 2026-08-04 (Expanded Orb Library)
 
 ### Added
