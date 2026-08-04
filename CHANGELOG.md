@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.49] - 2026-08-04 (License Verification Hardening)
+
+### Changed
+- 授权在线校验修复：服务端吊销或设备数超限的拒绝现在会被客户端采信（仅网络异常时降级为离线验签）。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过
+
 ## [0.2.48] - 2026-08-04 (Expanded Character Library)
 
 ### Added

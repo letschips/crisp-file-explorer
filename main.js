@@ -88,8 +88,8 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explo
           pluginId: targetPluginId
         })
       });
-      if (res.status === 200 && res.json) {
-        const cloudResult = res.json;
+      const cloudResult = res.json;
+      if (cloudResult && typeof cloudResult.valid === "boolean") {
         if (cloudResult.valid === false) {
           return { valid: false, reason: cloudResult.reason || "设备数已达上限" };
         }
