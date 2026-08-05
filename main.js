@@ -151,8 +151,8 @@ const TODAY_TRAIL_LIMIT = 140;
 const FOLDER_AUTO_EXPAND_DELAY_MS = 420;
 const ACTIVITY_SAVE_DELAY_MS = 240;
 const SPRING = {
-  stiffness: 380, // 稍微提升响应速度
-  damping: 24,
+  stiffness: 700, // 临界阻尼：点击切换快速到位、不反弹
+  damping: 53,
   restDelta: 0.08,
   restSpeed: 0.5, // 让球更彻底地滑到位，不会过早停止
 };

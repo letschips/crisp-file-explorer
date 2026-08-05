@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.50] - 2026-08-05 (Click Spring Tuning)
+
+### Changed
+- 点击切换文件时的小球弹簧改为临界阻尼（stiffness 700 / damping 53）：消除过冲回弹，快速单调到位；拖拽路径与拖动行为不变。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过（64/64）
+
 ## [0.2.49] - 2026-08-04 (License Verification Hardening)
 
 ### Changed

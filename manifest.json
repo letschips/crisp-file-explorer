@@ -1,7 +1,7 @@
 {
   "id": "crisp-file-explorer",
   "name": "Crisp File Explorer",
-  "version": "0.2.49",
+    "version": "0.2.50",
   "minAppVersion": "1.6.0",
   "description": "Adds a CrispToc-style animated rail, spring orb, and active-item motion to Obsidian's file explorer.",
   "author": "letschips",
