@@ -1061,30 +1061,42 @@ function resolveOrbTarget(items, activeTargetItem, hasCurrentPosition, currentPo
 
 class CrispAudio {
   constructor() {
-    this.context = null;
+    this.contexts = new WeakMap();
+    this.contextList = new Set();
     this.lastTickAt = 0;
+    this.currentOwnerWindow = null;
   }
 
-  ensureContext() {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
+  ensureContext(ownerWindow) {
+    const win = ownerWindow || (typeof window !== "undefined" ? window : null);
+    if (!win) return null;
+    const AudioContext = win.AudioContext || win.webkitAudioContext;
     if (!AudioContext) return null;
-    this.context = this.context || new AudioContext();
-    if (this.context.state === "suspended") {
-      this.context.resume().catch(() => {});
+    let context = this.contexts.get(win);
+    if (!context) {
+      context = new AudioContext();
+      this.contexts.set(win, context);
+      this.contextList.add(context);
     }
-    return this.context;
+    if (context.state === "suspended") {
+      context.resume().catch(() => {});
+    }
+    return context;
   }
 
   async destroy() {
-    const context = this.context;
-    this.context = null;
-    if (context && context.state !== "closed" && typeof context.close === "function") {
-      await context.close();
-    }
+    const contexts = Array.from(this.contextList);
+    this.contextList.clear();
+    this.contexts = new WeakMap();
+    await Promise.all(contexts.map(async (context) => {
+      if (context && context.state !== "closed" && typeof context.close === "function") {
+        await context.close();
+      }
+    }));
   }
 
   playTone(options) {
-    const context = this.ensureContext();
+    const context = this.ensureContext(this.currentOwnerWindow);
     if (!context) return;
 
     const now = context.currentTime;
@@ -1111,7 +1123,8 @@ class CrispAudio {
     oscillator.stop(now + duration + release + 0.01);
   }
 
-  tick(style = "soft", progress = 0.5, pitchScale = false) {
+  tick(style = "soft", progress = 0.5, pitchScale = false, ownerWindow) {
+    this.currentOwnerWindow = ownerWindow;
     try {
       const now = performance.now();
       if (now - this.lastTickAt < 35) return;
@@ -1144,10 +1157,13 @@ class CrispAudio {
       }
     } catch (error) {
       console.debug("Crisp File Explorer tick sound failed", error);
+    } finally {
+      this.currentOwnerWindow = null;
     }
   }
 
-  release(style = "soft") {
+  release(style = "soft", ownerWindow) {
+    this.currentOwnerWindow = ownerWindow;
     try {
       let resolvedStyle = normalizePlaybackSoundStyle(style);
       if (resolvedStyle === "wood") resolvedStyle = "wooden";
@@ -1172,6 +1188,8 @@ class CrispAudio {
       }
     } catch (error) {
       console.debug("Crisp File Explorer release sound failed", error);
+    } finally {
+      this.currentOwnerWindow = null;
     }
   }
 }
@@ -1802,6 +1820,7 @@ class FileExplorerRail {
             resolveSoundStyle(this.plugin.settings.soundStyle, this.orb.dataset.orbStyle),
             dragProgress,
             this.plugin.settings.pitchScaleEnabled,
+            this.ownerWindow,
           );
         }
         this.tickSideMap.set(index, currentSide);
@@ -1952,7 +1971,7 @@ class FileExplorerRail {
   }
 
   handlePointerMove(event) {
-    if (!this.isDragging || event.pointerId !== this.dragPointerId) return;
+    if (this.destroyed || !this.isDragging || event.pointerId !== this.dragPointerId) return;
     // 只在确认是拖动事件时才 preventDefault
     event.preventDefault();
     event.stopPropagation();
@@ -1968,7 +1987,7 @@ class FileExplorerRail {
   }
 
   handlePointerUp(event) {
-    if (!this.isDragging || event.pointerId !== this.dragPointerId) return;
+    if (this.destroyed || !this.isDragging || event.pointerId !== this.dragPointerId) return;
     // 只在确认是拖动事件时才 preventDefault
     event.preventDefault();
     event.stopPropagation();
@@ -1996,7 +2015,7 @@ class FileExplorerRail {
     const index = nearestIndex(this.items, this.displayY);
     const item = this.items[index];
     if (item && this.plugin.settings.releaseSoundEnabled && !prefersReducedMotion.matches) {
-      this.plugin.audio.release(resolveSoundStyle(this.plugin.settings.soundStyle, this.orb.dataset.orbStyle));
+      this.plugin.audio.release(resolveSoundStyle(this.plugin.settings.soundStyle, this.orb.dataset.orbStyle), this.ownerWindow);
     }
     if (item && this.plugin.settings.openOnDragRelease) {
       const skipAutoExpandedFolder = item.type === "folder" && this.autoExpandedFolderPaths.has(item.path);

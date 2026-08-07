@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.51] - 2026-08-07 (Multi-Window Audio & Drag Safety)
+
+### Fixed
+- CrispAudio 改为按 owner window 创建独立 AudioContext（WeakMap 缓存，单独维护待关闭 context 列表），修复 popout 独立窗口拖动 orb 时音效可能不播放的问题（主窗口 AudioContext 在后台被 Electron 挂起时）；关闭的 popout 窗口不再被强引用保留。
+- 拖动事件处理器（handlePointerMove / handlePointerUp）增加 `destroyed` 守卫，防止控制器销毁后事件队列中残留的 pointer 事件触发异常访问。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过（66/66，新增 2 项：多窗口 AudioContext 隔离、destroyed 控制器忽略拖动事件）
+
 ## [0.2.50] - 2026-08-05 (Click Spring Tuning)
 
 ### Changed

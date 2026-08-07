@@ -416,18 +416,54 @@ test("queued plugin refreshes are ignored after unload starts", () => {
 test("audio resources are closed when the plugin unloads", async () => {
   const { CrispAudio } = loadPluginRuntime();
   let closeCount = 0;
-  const audio = Object.create(CrispAudio.prototype);
-  audio.context = {
+  const mockWindow = {};
+  const mockContext = {
     state: "running",
     close: async () => {
       closeCount += 1;
     },
   };
+  const audio = Object.create(CrispAudio.prototype);
+  audio.contexts = new WeakMap();
+  audio.contextList = new Set([mockContext]);
+  audio.contexts.set(mockWindow, mockContext);
 
   await audio.destroy();
 
   assert.equal(closeCount, 1);
-  assert.equal(audio.context, null);
+  assert.equal(audio.contextList.size, 0);
+});
+
+test("audio creates a separate AudioContext per owner window", () => {
+  const { CrispAudio } = loadPluginRuntime();
+  const created = [];
+  const mainWindow = {
+    AudioContext: class MainAudioContext {
+      constructor() { created.push("main"); this.state = "running"; }
+      resume() { return Promise.resolve(); }
+    },
+  };
+  const popoutWindow = {
+    AudioContext: class PopoutAudioContext {
+      constructor() { created.push("popout"); this.state = "running"; }
+      resume() { return Promise.resolve(); }
+    },
+  };
+  const audio = Object.create(CrispAudio.prototype);
+  audio.contexts = new WeakMap();
+  audio.contextList = new Set();
+  audio.currentOwnerWindow = null;
+
+  const mainCtx = audio.ensureContext(mainWindow);
+  const mainCtxAgain = audio.ensureContext(mainWindow);
+  const popoutCtx = audio.ensureContext(popoutWindow);
+
+  assert.equal(created.length, 2);
+  assert.deepEqual(created, ["main", "popout"]);
+  assert.equal(mainCtx, mainCtxAgain);
+  assert.notEqual(mainCtx, popoutCtx);
+  assert.ok(audio.contexts instanceof WeakMap);
+  assert.equal(audio.contextList.size, 2);
 });
 
 test("stable far-away rows are not rewritten on every animation frame", () => {
@@ -1533,6 +1569,32 @@ test("window blur cancels a drag and requests a clean file-tree refresh", () => 
   assert.equal(cancellations, 1);
   assert.equal(refreshes, 1);
   assert.equal(frames, 1);
+});
+
+test("destroyed controllers ignore pointer move and up events", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  let moveCalls = 0;
+  let upCalls = 0;
+  const controller = {
+    destroyed: true,
+    isDragging: true,
+    dragPointerId: 1,
+    updateDrag() { moveCalls += 1; },
+    setDragging() {},
+    releasePointerCapture() {},
+    cancelDragScroll() {},
+    clearAutoExpandTimer() {},
+    cleanupDragListeners() {},
+    requestFrame() {},
+  };
+  const moveEvent = { pointerId: 1, preventDefault() {}, stopPropagation() {} };
+  const upEvent = { pointerId: 1, type: "pointerup", preventDefault() {}, stopPropagation() {} };
+
+  FileExplorerRail.prototype.handlePointerMove.call(controller, moveEvent);
+  FileExplorerRail.prototype.handlePointerUp.call(controller, upEvent);
+
+  assert.equal(moveCalls, 0);
+  assert.equal(upCalls, 0);
 });
 
 test("an active drag ignores additional pointer-down events", () => {
