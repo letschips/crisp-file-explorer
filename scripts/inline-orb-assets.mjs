@@ -47,23 +47,28 @@ function escapeTemplateLiteral(value) {
 }
 
 function cleanSvg(source) {
-  const cleaned = source
+  let cleaned = source
     .replace(/<\?xml[^>]*\?>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/width="[^"]*"/gi, "")
-    .replace(/height="[^"]*"/gi, "")
-    .replace(/class="[^"]*"/gi, "")
     .replace(/^[\s\S]*?(<svg)/i, "$1")
-    .replace(/>\s+</g, "><")
-    .replace(/\s+/g, " ")
     .trim();
-  return cleaned.replace(/^<svg/i, '<svg class="crisp-fe-orb-ball"');
+  // Normalize only the root <svg> tag: drop width/height/legacy class and
+  // apply the orb class. Child element classes (e.g. cls-N fills) must stay.
+  cleaned = cleaned.replace(/^(<svg)\b([^>]*)>/i, (_match, open, attrs) => {
+    const cleanedAttrs = attrs
+      .replace(/\s+width="[^"]*"/gi, "")
+      .replace(/\s+height="[^"]*"/gi, "")
+      .replace(/\s+class="[^"]*"/gi, "")
+      .trim();
+    return `${open} class="crisp-fe-orb-ball"${cleanedAttrs ? ` ${cleanedAttrs}` : ""}>`;
+  });
+  return cleaned;
 }
 
 function blockRange(source, startMarker) {
   const start = source.indexOf(startMarker);
   if (start < 0) {
-    throw new Error(`marker not found: ${startMarker}`);
+    return null;
   }
   const end = source.indexOf("\n};", start + startMarker.length);
   if (end < 0) {
@@ -90,7 +95,11 @@ for (const [filename, style] of Object.entries(ASSET_STYLES)) {
 let main = readFileSync(mainPath, "utf8");
 
 // 1. Replace the file-backed IMAGE_ORB_ASSETS with inline PNG data URLs.
+// Run on a clean main.js (restore from git first if it was already inlined).
 const imageBlock = blockRange(main, "const IMAGE_ORB_ASSETS = {");
+if (!imageBlock) {
+  throw new Error("image orb block not found");
+}
 main =
   main.slice(0, imageBlock.start) +
   `const ORB_IMAGE_DATA_URLS = {\n${pngEntries.join("\n")}\n};` +
@@ -98,6 +107,9 @@ main =
 
 // 2. Fold the SVG assets into the inline ORB_SVGS map.
 const svgBlock = blockRange(main, "const ORB_SVGS = {");
+if (!svgBlock) {
+  throw new Error("ORB_SVGS block not found");
+}
 main =
   main.slice(0, svgBlock.end - 2) +
   `\n${svgEntries.join("\n")}\n` +
@@ -116,11 +128,12 @@ const expectedReplacements = [
   ],
 ];
 for (const [from, to] of expectedReplacements) {
-  const count = main.split(from).length - 1;
-  if (count !== 1) {
-    throw new Error(`expected exactly 1 occurrence of "${from}", found ${count}`);
+  const fromCount = main.split(from).length - 1;
+  if (fromCount === 1) {
+    main = main.split(from).join(to);
+  } else {
+    throw new Error(`expected exactly 1 occurrence of "${from}", found ${fromCount}`);
   }
-  main = main.split(from).join(to);
 }
 
 if (main.includes("IMAGE_ORB_ASSETS")) {

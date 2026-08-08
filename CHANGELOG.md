@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.53] - 2026-08-08 (Fix Inline SVG Class Stripping)
+
+### Fixed
+- 修复内联 SVG 时误删子元素 class 导致 character4 / Captain America Shield / Mercedes 等素材变纯黑的问题：现在只规范化根 `<svg>` 标签，保留元素级 class 与 `<style>` 填充定义。
+
 ## [0.2.52] - 2026-08-08 (Inline Orb Assets)
 
 ### Changed
