@@ -132,7 +132,7 @@ test("settings About card exposes the plugin purpose and author", () => {
   const title = findByClass(container, "crisp-fe-about__title");
   const description = findByClass(container, "crisp-fe-about__description");
   const author = findByClass(container, "crisp-fe-about__author-link");
-  assert.equal(title.textContent, "About Crisp File Explorer");
+  assert.equal(title.textContent, "关于 Crisp File Explorer");
   assert.equal(
     description.textContent,
     "用更清晰、更有质感的文件导航，让笔记库浏览轻快而有序。"

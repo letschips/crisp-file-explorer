@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.54] - 2026-08-08 (Chinese Settings UI)
+
+### Changed
+- 设置页全面汉化：分组标题、设置项与描述改为中文；小球素材名称保持英文。
+
 ## [0.2.53] - 2026-08-08 (Fix Inline SVG Class Stripping)
 
 ### Fixed

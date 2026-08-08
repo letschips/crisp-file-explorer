@@ -2528,7 +2528,7 @@ function renderAboutCard(container, pluginName, description) {
 
   const title = document.createElement("h3");
   title.className = "crisp-fe-about__title";
-  title.textContent = `About ${pluginName}`;
+  title.textContent = `关于 ${pluginName}`;
 
   const copy = document.createElement("p");
   copy.className = "crisp-fe-about__description";
@@ -2664,12 +2664,12 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
     );
 
     new Setting(orbBody)
-      .setName("Orb style")
-      .setDesc("Choose the draggable orb appearance.")
+      .setName("小球样式")
+      .setDesc("选择可拖动小球的样式。")
       .addDropdown((dropdown) =>
         dropdown
-          .addOption("default", "Default")
-          .addOption("randomDaily", "Random per day")
+          .addOption("default", "默认")
+          .addOption("randomDaily", "每日随机")
           .addOption("soccer", "Soccer")
           .addOption("basketball", "Basketball")
           .addOption("redball", "Red ball")
@@ -2733,8 +2733,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
     );
 
     new Setting(audioBody)
-      .setName("Tick sound while dragging")
-      .setDesc("Play a short tick when the orb crosses file-tree marks.")
+      .setName("拖动音效")
+      .setDesc("小球经过文件树标记点时播放短促滴答声。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.soundEnabled).onChange(async (value) => {
           this.plugin.settings.soundEnabled = value;
@@ -2743,8 +2743,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(audioBody)
-      .setName("Sound style")
-      .setDesc("Choose the sound used for drag ticks and release confirmation.")
+      .setName("音效风格")
+      .setDesc("选择拖动与落定确认音效。")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("soft", "Soft tick (经典轻型切音)")
@@ -2764,8 +2764,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(audioBody)
-      .setName("Pitch scale pitch glide")
-      .setDesc("Glides the sound pitch higher as you drag down the file tree list.")
+      .setName("音高滑动")
+      .setDesc("沿文件树向下拖动时，音高随之升高。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.pitchScaleEnabled).onChange(async (value) => {
           this.plugin.settings.pitchScaleEnabled = value;
@@ -2774,8 +2774,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(audioBody)
-      .setName("Release sound")
-      .setDesc("Play a short confirmation sound when the orb is released over an item.")
+      .setName("落定音效")
+      .setDesc("小球落在某个项目上时播放确认音。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.releaseSoundEnabled).onChange(async (value) => {
           this.plugin.settings.releaseSoundEnabled = value;
@@ -2791,8 +2791,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
     );
 
     new Setting(activityBody)
-      .setName("Today trail")
-      .setDesc("Mark files opened today with subtle dots on the rail.")
+      .setName("今日轨迹")
+      .setDesc("在轨道上用淡点标记今日打开过的文件。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.todayTrailEnabled).onChange(async (value) => {
           this.plugin.settings.todayTrailEnabled = value;
@@ -2802,8 +2802,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(activityBody)
-      .setName("Frequent file magnets")
-      .setDesc("Give frequently opened files a gentle magnetic pull while dragging.")
+      .setName("高频文件磁吸")
+      .setDesc("拖动时为高频打开的文件提供轻柔磁吸。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.frequentMagnetsEnabled).onChange(async (value) => {
           this.plugin.settings.frequentMagnetsEnabled = value;
@@ -2820,8 +2820,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
     );
 
     new Setting(interactionBody)
-      .setName("Include folders")
-      .setDesc("Show folder rows in the animated rail as well as files.")
+      .setName("包含文件夹")
+      .setDesc("在动效轨道中同时显示文件夹行。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.includeFolders).onChange(async (value) => {
           this.plugin.settings.includeFolders = value;
@@ -2831,8 +2831,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(interactionBody)
-      .setName("Open item on drag release")
-      .setDesc("Open the nearest file or toggle the nearest folder when the orb is released.")
+      .setName("松开打开项目")
+      .setDesc("松开小球时打开最近的文件，或展开/收起最近的文件夹。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.openOnDragRelease).onChange(async (value) => {
           this.plugin.settings.openOnDragRelease = value;
@@ -2841,8 +2841,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(interactionBody)
-      .setName("Auto-expand folders")
-      .setDesc("Expand a folder after the orb rests on it while dragging.")
+      .setName("自动展开文件夹")
+      .setDesc("拖动时小球停留在文件夹上自动展开。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.autoExpandFoldersOnDrag).onChange(async (value) => {
           this.plugin.settings.autoExpandFoldersOnDrag = value;
