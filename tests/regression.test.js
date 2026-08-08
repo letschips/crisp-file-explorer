@@ -18,7 +18,7 @@ function loadPluginRuntime(overrides = {}) {
     dispatchMouseSequence: typeof dispatchMouseSequence === "function" ? dispatchMouseSequence : undefined,
     FileExplorerRail,
     CrispAudio,
-    IMAGE_ORB_ASSETS,
+    ORB_IMAGE_DATA_URLS,
     RANDOM_DAILY_ORB_STYLES,
     STATIC_ORB_STYLES,
     renderAboutCard: typeof renderAboutCard === "function" ? renderAboutCard : undefined,
@@ -1340,8 +1340,12 @@ test("rail focus is a fixed GPU-translated gradient layer", () => {
   assert.match(css, /\.crisp-fe-line-focus\s*\{[\s\S]*?height:\s*192px[\s\S]*?linear-gradient/);
 });
 
-test("all file-backed SVG orbs are bundled without machine-specific paths", () => {
+test("all orb artwork is bundled inline without machine-specific paths", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const inlineOrbBlock = source.match(/const ORB_SVGS\s*=\s*\{([\s\S]*?)\n\};/);
+  const dataUrlBlock = source.match(/const ORB_IMAGE_DATA_URLS\s*=\s*\{([\s\S]*?)\n\};/);
+  assert.ok(inlineOrbBlock);
+  assert.ok(dataUrlBlock);
   for (const [style, { asset, label }] of Object.entries({
     soccer: { asset: "assets/soccer.svg", label: "Soccer" },
     basketball: { asset: "assets/basketball.svg", label: "Basketball" },
@@ -1371,36 +1375,50 @@ test("all file-backed SVG orbs are bundled without machine-specific paths", () =
     character5: { asset: "assets/character5.svg", label: "Character 5" },
   })) {
     assert.ok(fs.existsSync(path.join(__dirname, "..", asset)), `${asset} should exist`);
-    assert.match(source, new RegExp(`${style}:\\s*"${asset.replace("/", "\\/")}"`));
+    assert.match(inlineOrbBlock[1], new RegExp(`^\\s*${style}:`, "m"));
     assert.match(source, new RegExp(`addOption\\("${style}",\\s*"${label}"\\)`));
   }
+  assert.match(dataUrlBlock[1], /character1:\s*"data:image\/png;base64,/);
+  assert.match(dataUrlBlock[1], /character2:\s*"data:image\/png;base64,/);
+  assert.match(dataUrlBlock[1], /character3:\s*"data:image\/png;base64,/);
   assert.doesNotMatch(source, /\/Users\/|Downloads\/|Desktop\/|iCloud~/);
+  assert.doesNotMatch(source, /"assets\//);
 });
 
-test("runtime assets contain no stale files or duplicate inline sports SVGs", () => {
+test("runtime ships inline orbs with no separate asset dependency", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const referencedAssets = Array.from(
     source.matchAll(/"(assets\/[^"]+\.(?:png|svg))"/g),
     (match) => match[1]
-  ).sort();
-  const bundledAssets = fs.readdirSync(path.join(__dirname, "..", "assets"))
-    .filter((name) => /\.(?:png|svg)$/.test(name))
-    .map((name) => `assets/${name}`)
-    .sort();
+  );
   const inlineOrbBlock = source.match(/const ORB_SVGS\s*=\s*\{([\s\S]*?)\n\};/);
+  const dataUrlBlock = source.match(/const ORB_IMAGE_DATA_URLS\s*=\s*\{([\s\S]*?)\n\};/);
 
-  assert.deepEqual(bundledAssets, referencedAssets);
+  assert.deepEqual(referencedAssets, []);
   assert.ok(inlineOrbBlock);
-  assert.doesNotMatch(inlineOrbBlock[1], /^\s*(?:soccer|basketball|tennis):/m);
+  assert.match(inlineOrbBlock[1], /^\s*soccer:/m);
+  assert.match(inlineOrbBlock[1], /^\s*basketball:/m);
+  assert.match(inlineOrbBlock[1], /^\s*tennis:/m);
+  assert.match(inlineOrbBlock[1], /^\s*spiderman:/m);
+  assert.ok(dataUrlBlock);
+  assert.equal((dataUrlBlock[1].match(/data:image\/png;base64,/g) ?? []).length, 3);
+  // Asset files remain on disk for reference and manual repackaging.
+  for (const name of fs.readdirSync(path.join(__dirname, "..", "assets"))) {
+    if (/\.(?:png|svg)$/.test(name)) {
+      assert.ok(fs.existsSync(path.join(__dirname, "..", "assets", name)));
+    }
+  }
 });
 
-test("new character SVGs stay upright while circular SVGs rotate", () => {
-  const { IMAGE_ORB_ASSETS, RANDOM_DAILY_ORB_STYLES, STATIC_ORB_STYLES } = loadPluginRuntime();
+test("character PNG data URLs stay upright while circular SVGs rotate", () => {
+  const { ORB_IMAGE_DATA_URLS, RANDOM_DAILY_ORB_STYLES, STATIC_ORB_STYLES } = loadPluginRuntime();
   const staticStyles = ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5"];
   const rotatingStyles = ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield"];
 
+  assert.match(ORB_IMAGE_DATA_URLS.character1, /^data:image\/png;base64,/);
+  assert.match(ORB_IMAGE_DATA_URLS.character2, /^data:image\/png;base64,/);
+  assert.match(ORB_IMAGE_DATA_URLS.character3, /^data:image\/png;base64,/);
   for (const style of [...staticStyles, ...rotatingStyles]) {
-    assert.ok(IMAGE_ORB_ASSETS[style], `${style} should use an owned SVG asset`);
     assert.ok(RANDOM_DAILY_ORB_STYLES.includes(style), `${style} should be available to Random per day`);
   }
   for (const style of staticStyles) assert.ok(STATIC_ORB_STYLES.has(style));
@@ -1427,7 +1445,7 @@ test("gear orb keeps a small inset inside the shared rotating wrapper", () => {
   );
 });
 
-test("external SVG orbs rotate through the same fixed-center ball wrapper as inline balls", () => {
+test("character PNG orbs rotate through the same fixed-center ball wrapper as inline balls", () => {
   const created = [];
   const makeElement = (tagName) => {
     const element = {
@@ -1453,7 +1471,7 @@ test("external SVG orbs rotate through the same fixed-center ball wrapper as inl
   };
   const controller = {
     plugin: {
-      settings: { orbStyle: "fear" },
+      settings: { orbStyle: "character1" },
       getResourceUrl: (asset) => `app://${asset}`,
     },
     orb,
@@ -1471,6 +1489,7 @@ test("external SVG orbs rotate through the same fixed-center ball wrapper as inl
   assert.equal(spinner.children.length, 1);
   assert.equal(spinner.children[0].tagName, "IMG");
   assert.equal(spinner.children[0].className, "crisp-fe-orb-image");
+  assert.match(spinner.children[0].src, /^data:image\/png;base64,/);
   assert.equal(controller.orbBall, spinner, "rotation must target the centered wrapper, not the replaced image element");
 });
 

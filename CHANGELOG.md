@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.52] - 2026-08-08 (Inline Orb Assets)
+
+### Changed
+- 全部 orb 素材改为内联（26 个 SVG 直接嵌入 + character1-3 以 base64 data URL 内嵌），BRAT / 社区市场安装不再依赖 `assets/` 文件夹，付费小球在任意安装方式下都能正常显示。
+
 ## [0.2.51] - 2026-08-07 (Multi-Window Audio & Drag Safety)
 
 ### Fixed
