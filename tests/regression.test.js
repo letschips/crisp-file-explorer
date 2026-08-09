@@ -22,6 +22,7 @@ function loadPluginRuntime(overrides = {}) {
     RANDOM_DAILY_ORB_STYLES,
     STATIC_ORB_STYLES,
     renderAboutCard: typeof renderAboutCard === "function" ? renderAboutCard : undefined,
+    CRISP_LICENSE_PRODUCTS,
   };`;
   const clearedTimers = [];
   const scheduledTimers = new Map();
@@ -88,6 +89,17 @@ function readStyles() {
   return fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 }
 
+test("maintenance documents track the runtime manifest version", () => {
+  const root = path.join(__dirname, "..");
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
+  const checklist = fs.readFileSync(path.join(root, "TEST-CHECKLIST.md"), "utf8");
+  const optimization = fs.readFileSync(path.join(root, "OPTIMIZATION.md"), "utf8");
+
+  assert.match(checklist, new RegExp(`v${manifest.version.replaceAll(".", "\\.")}`));
+  assert.match(checklist, new RegExp(`manifest\\.json.*${manifest.version.replaceAll(".", "\\.")}`));
+  assert.match(optimization, new RegExp(`当前版本：v${manifest.version.replaceAll(".", "\\.")}`));
+});
+
 function createAboutCardFixture() {
   const createElement = (tagName) => ({
     tagName: tagName.toUpperCase(),
@@ -142,6 +154,20 @@ test("settings About card exposes the plugin purpose and author", () => {
   assert.equal(author.target, "_blank");
   assert.equal(author.rel, "noopener noreferrer");
   assert.equal(card.children.includes(author), false);
+});
+
+test("license compatibility includes the complete current Crisp family", () => {
+  const { CRISP_LICENSE_PRODUCTS } = loadPluginRuntime();
+  assert.deepEqual(Array.from(CRISP_LICENSE_PRODUCTS), [
+    "Crisp Suite",
+    "Crisp Organize",
+    "Crisp ASR",
+    "Crisp Annotations",
+    "Crisp File Explorer",
+    "Crisp Focus",
+    "Crisp Reading Rail",
+    "Crisp Base",
+  ]);
 });
 
 function fakeClassList() {

@@ -1,6 +1,6 @@
 # Crisp File Explorer 维护说明
 
-当前版本：v0.2.51
+当前版本：v0.2.55
 
 作者：letschips（小红书博主）
 

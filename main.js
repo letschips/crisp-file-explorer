@@ -19,6 +19,17 @@ const CRISP_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAiz41HIDpD59SH3DjKnovUO+EEhTJXjvmiug/ev9t4ZQ=
 -----END PUBLIC KEY-----`;
 
+const CRISP_LICENSE_PRODUCTS = [
+  "Crisp Suite",
+  "Crisp Organize",
+  "Crisp ASR",
+  "Crisp Annotations",
+  "Crisp File Explorer",
+  "Crisp Focus",
+  "Crisp Reading Rail",
+  "Crisp Base",
+];
+
 
 function base64UrlToUint8Array(base64url) {
   const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
@@ -56,8 +67,7 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explo
   try {
     const payloadJson = new TextDecoder().decode(base64UrlToUint8Array(payloadBase64));
     const payload = JSON.parse(payloadJson);
-    const validProducts = ["Crisp Suite", "Crisp ASR", "Crisp Annotations", "Crisp File Explorer", "Crisp Focus", "Crisp Reading Rail"];
-    if (!validProducts.includes(payload.product)) return { valid: false, reason: "授权码不属于 Crisp 系列插件" };
+    if (!CRISP_LICENSE_PRODUCTS.includes(payload.product)) return { valid: false, reason: "授权码不属于 Crisp 系列插件" };
     const features = Array.isArray(payload.features) ? payload.features : [];
     if (!features.includes("all") && !features.includes(targetPluginId)) {
       return { valid: false, reason: `该授权码未包含 ${targetPluginId} 权限` };

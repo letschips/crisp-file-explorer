@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.55] - 2026-08-09 (Suite Compatibility & Maintenance Guard)
+
+### Fixed
+- Crisp 系列授权产品名单补齐 Crisp Organize 与 Crisp Base，保持跨插件授权兼容。
+- 修复测试清单与运行时版本不一致的问题。
+
 ## [0.2.54] - 2026-08-08 (Chinese Settings UI)
 
 ### Changed
