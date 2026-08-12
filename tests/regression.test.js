@@ -13,6 +13,8 @@ function loadPluginRuntime(overrides = {}) {
     indexRangeAround: typeof indexRangeAround === "function" ? indexRangeAround : undefined,
     mutationTouchesFileTree: typeof mutationTouchesFileTree === "function" ? mutationTouchesFileTree : undefined,
     hasStableTickTopology: typeof hasStableTickTopology === "function" ? hasStableTickTopology : undefined,
+    normalizeActivity: typeof normalizeActivity === "function" ? normalizeActivity : undefined,
+    rankSmartMagnetPaths: typeof rankSmartMagnetPaths === "function" ? rankSmartMagnetPaths : undefined,
     resolveOrbTarget: typeof resolveOrbTarget === "function" ? resolveOrbTarget : undefined,
     rewriteActivityPaths: typeof rewriteActivityPaths === "function" ? rewriteActivityPaths : undefined,
     dispatchMouseSequence: typeof dispatchMouseSequence === "function" ? dispatchMouseSequence : undefined,
@@ -98,6 +100,23 @@ test("maintenance documents track the runtime manifest version", () => {
   assert.match(checklist, new RegExp(`v${manifest.version.replaceAll(".", "\\.")}`));
   assert.match(checklist, new RegExp(`manifest\\.json.*${manifest.version.replaceAll(".", "\\.")}`));
   assert.match(optimization, new RegExp(`当前版本：v${manifest.version.replaceAll(".", "\\.")}`));
+});
+
+test("settings groups and plugin commands are fully localized", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  for (const text of [
+    "小球与视觉",
+    "音效反馈",
+    "活动与磁吸",
+    "拖动与文件树",
+    "切换文件夹刻度",
+    "切换拖动音效",
+  ]) {
+    assert.match(source, new RegExp(`"${text}"`));
+  }
+  assert.doesNotMatch(source, /"(?:Orb & Visual Appearance|Audio & Sound Feedback|Activity & Heatmap|Drag & File Tree Interaction)"/);
+  assert.doesNotMatch(source, /name:\s*"Toggle (?:folder marks|tick sound)"/);
 });
 
 function createAboutCardFixture() {
@@ -1069,11 +1088,143 @@ test("activity marker sets are cached until activity changes", () => {
   assert.equal(frequentBuilds, 1);
 });
 
+test("smart magnets favor recent use and expire stale lifetime leaders", () => {
+  const { rankSmartMagnetPaths } = loadPluginRuntime();
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.UTC(2026, 7, 12);
+  const activity = {
+    pinnedPaths: [],
+    fileStats: {
+      "stale-heavy.md": { count: 200, lastOpened: now - 120 * day },
+      "recent-steady.md": { count: 4, lastOpened: now - day },
+      "recent-light.md": { count: 2, lastOpened: now - 2 * day },
+      "old-but-valid.md": { count: 40, lastOpened: now - 30 * day },
+    },
+  };
+
+  const result = rankSmartMagnetPaths(activity, now);
+
+  assert.deepEqual(Array.from(result.recommendedPaths), [
+    "recent-steady.md",
+    "recent-light.md",
+    "old-but-valid.md",
+  ]);
+  assert.equal(result.recommendedPaths.includes("stale-heavy.md"), false);
+});
+
+test("pinned rail points take priority and keep the total magnet count at eight", () => {
+  const { rankSmartMagnetPaths } = loadPluginRuntime();
+  const now = Date.UTC(2026, 7, 12);
+  const pinnedPaths = ["home.md", "inbox.md", "database.md"];
+  const fileStats = Object.fromEntries(
+    Array.from({ length: 10 }, (_, index) => [
+      `auto-${index}.md`,
+      { count: 20 - index, lastOpened: now - index * 1000 },
+    ]),
+  );
+
+  const result = rankSmartMagnetPaths({ pinnedPaths, fileStats }, now);
+
+  assert.deepEqual(Array.from(result.pinnedPaths), pinnedPaths);
+  assert.equal(result.recommendedPaths.length, 5);
+  assert.equal(new Set([...result.pinnedPaths, ...result.recommendedPaths]).size, 8);
+});
+
+test("activity normalization deduplicates and caps manual rail pins", () => {
+  const { normalizeActivity } = loadPluginRuntime();
+  const normalized = normalizeActivity({
+    pinnedPaths: [
+      "one.md",
+      "two.md",
+      "one.md",
+      "three.md",
+      "four.md",
+      "five.md",
+      "six.md",
+      "seven.md",
+      "eight.md",
+      "nine.md",
+    ],
+  });
+
+  assert.deepEqual(Array.from(normalized.pinnedPaths), [
+    "one.md",
+    "two.md",
+    "three.md",
+    "four.md",
+    "five.md",
+    "six.md",
+    "seven.md",
+    "eight.md",
+  ]);
+});
+
+test("file context menus expose the correct Crisp Rail pin action", () => {
+  const { PluginClass } = loadPluginRuntime();
+  const plugin = Object.create(PluginClass.prototype);
+  plugin.settings = {
+    frequentMagnetsEnabled: false,
+    activity: { pinnedPaths: ["pinned.md"] },
+  };
+  const items = [];
+  const menu = {
+    addItem(callback) {
+      const item = {
+        setTitle(value) { this.title = value; return this; },
+        setIcon(value) { this.icon = value; return this; },
+        onClick(callbackValue) { this.callback = callbackValue; return this; },
+      };
+      callback(item);
+      items.push(item);
+    },
+  };
+
+  plugin.addCrispRailMenuItem(menu, { path: "normal.md" });
+  plugin.addCrispRailMenuItem(menu, { path: "pinned.md" });
+  plugin.addCrispRailMenuItem(menu, { path: "folder", children: [] });
+
+  assert.deepEqual(
+    items.map(({ title, icon }) => ({ title, icon })),
+    [
+      { title: "固定到 Crisp Rail", icon: "pin" },
+      { title: "从 Crisp Rail 取消固定", icon: "pin-off" },
+    ],
+  );
+});
+
+test("manual rail pin changes persist and refresh without exceeding the limit", async () => {
+  const { PluginClass } = loadPluginRuntime();
+  const plugin = Object.create(PluginClass.prototype);
+  let saves = 0;
+  let refreshes = 0;
+  plugin.settings = {
+    activity: {
+      pinnedPaths: ["one.md", "two.md", "three.md", "four.md", "five.md", "six.md", "seven.md"],
+      fileStats: {},
+    },
+  };
+  plugin.saveSettings = async () => { saves += 1; };
+  plugin.scheduleRefresh = () => { refreshes += 1; };
+
+  const added = await plugin.togglePinnedPath("eight.md");
+  const rejected = await plugin.togglePinnedPath("nine.md");
+  const removed = await plugin.togglePinnedPath("two.md");
+
+  assert.deepEqual(JSON.parse(JSON.stringify(added)), { changed: true, pinned: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(rejected)), { changed: false, pinned: false, limitReached: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(removed)), { changed: true, pinned: false });
+  assert.equal(plugin.settings.activity.pinnedPaths.includes("eight.md"), true);
+  assert.equal(plugin.settings.activity.pinnedPaths.includes("two.md"), false);
+  assert.equal(saves, 2);
+  assert.equal(refreshes, 2);
+});
+
 test("activity state follows folder renames and removes deleted paths", () => {
   const { rewriteActivityPaths } = loadPluginRuntime();
   assert.equal(typeof rewriteActivityPaths, "function");
   const original = {
     todayKey: "2026-07-28",
+    pinnedPaths: ["Projects/A.md", "Keep.md", "Projects/Sub/B.md"],
     todayPaths: [
       "Projects/A.md",
       "Keep.md",
@@ -1091,6 +1242,7 @@ test("activity state follows folder renames and removes deleted paths", () => {
   const renamed = rewriteActivityPaths(original, "Projects", "Archive");
   assert.deepEqual(JSON.parse(JSON.stringify(renamed)), {
     todayKey: "2026-07-28",
+    pinnedPaths: ["Archive/A.md", "Keep.md", "Archive/Sub/B.md"],
     todayPaths: ["Keep.md", "Archive/A.md", "Archive/Sub/B.md"],
     fileStats: {
       "Archive/A.md": { count: 5, lastOpened: 30 },
@@ -1108,11 +1260,23 @@ test("activity state follows folder renames and removes deleted paths", () => {
   const deleted = rewriteActivityPaths(renamed, "Archive", null);
   assert.deepEqual(JSON.parse(JSON.stringify(deleted)), {
     todayKey: "2026-07-28",
+    pinnedPaths: ["Keep.md"],
     todayPaths: ["Keep.md"],
     fileStats: {
       "Keep.md": { count: 1, lastOpened: 10 },
     },
   });
+});
+
+test("manual rail pins use a stronger dot without changing the shared rail geometry", () => {
+  const css = readStyles();
+  const pinnedBlock = css.match(/\.crisp-fe-tick\.is-pinned::after\s*\{([^}]*)\}/);
+
+  assert.ok(pinnedBlock);
+  assert.match(pinnedBlock[1], /width:\s*5px/);
+  assert.match(pinnedBlock[1], /height:\s*5px/);
+  assert.match(pinnedBlock[1], /opacity:\s*0\.96/);
+  assert.doesNotMatch(pinnedBlock[1], /left:|top:\s*(?!50%)/);
 });
 
 test("runtime workspace listeners start once, after layout ready", () => {
@@ -1121,6 +1285,7 @@ test("runtime workspace listeners start once, after layout ready", () => {
   assert.match(source, /startRuntime\(\)\s*\{[\s\S]*?if \(this\.runtimeStarted/);
   assert.match(source, /workspace\.on\("window-open",\s*\(\)\s*=>\s*this\.scheduleRefresh\(\)\)/);
   assert.match(source, /workspace\.on\("window-close",\s*\(\)\s*=>\s*this\.scheduleRefresh\(\)\)/);
+  assert.match(source, /workspace\.on\("file-menu",\s*\(menu, file\)\s*=>\s*\{/);
   const onload = source.match(/async onload\(\)\s*\{([\s\S]*?)\n\s*\}\n\n\s*onunload\(\)/);
   assert.ok(onload);
   const beforeReady = onload[1].split("onLayoutReady")[0];

@@ -127,6 +127,7 @@ const DEFAULT_SETTINGS = {
   activity: {
     todayKey: "",
     todayPaths: [],
+    pinnedPaths: [],
     fileStats: {},
   },
   licenseCode: "",
@@ -154,8 +155,10 @@ const DRAG_SCROLL_EDGE_MARGIN = 56;
 const DRAG_SCROLL_MAX_STEP = 20;
 const MAGNET_RADIUS = 18;
 const MAGNET_STRENGTH = 0.42;
-const FREQUENT_MAGNET_MIN_COUNT = 3;
-const FREQUENT_MAGNET_LIMIT = 14;
+const SMART_MAGNET_MIN_COUNT = 2;
+const SMART_MAGNET_LIMIT = 8;
+const SMART_MAGNET_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;
+const SMART_MAGNET_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const FILE_STATS_LIMIT = 240;
 const TODAY_TRAIL_LIMIT = 140;
 const FOLDER_AUTO_EXPAND_DELAY_MS = 420;
@@ -1058,12 +1061,58 @@ function normalizeActivity(value) {
   const fileStats = activity.fileStats && typeof activity.fileStats === "object"
     ? activity.fileStats
     : {};
+  const pinnedPaths = [];
+  const seenPinnedPaths = new Set();
+  for (const path of Array.isArray(activity.pinnedPaths) ? activity.pinnedPaths : []) {
+    if (typeof path !== "string" || !path || seenPinnedPaths.has(path)) continue;
+    seenPinnedPaths.add(path);
+    pinnedPaths.push(path);
+    if (pinnedPaths.length >= SMART_MAGNET_LIMIT) break;
+  }
 
   return {
     todayKey: typeof activity.todayKey === "string" ? activity.todayKey : "",
     todayPaths: todayPaths.slice(-TODAY_TRAIL_LIMIT),
+    pinnedPaths,
     fileStats: pruneFileStats(fileStats),
   };
+}
+
+function smartMagnetScore(stat, now = Date.now()) {
+  const count = Number(stat && stat.count) || 0;
+  const lastOpened = Number(stat && stat.lastOpened) || 0;
+  if (count < SMART_MAGNET_MIN_COUNT || lastOpened <= 0) return Number.NEGATIVE_INFINITY;
+
+  const age = Math.max(0, now - lastOpened);
+  if (age > SMART_MAGNET_MAX_AGE_MS) return Number.NEGATIVE_INFINITY;
+
+  const recency = 2 ** (-age / SMART_MAGNET_HALF_LIFE_MS);
+  const frequency = Math.min(1, Math.log2(count + 1) / 6);
+  return recency * 0.72 + frequency * 0.28;
+}
+
+function rankSmartMagnetPaths(value, now = Date.now()) {
+  const activity = normalizeActivity(value);
+  const pinnedPaths = activity.pinnedPaths.slice(0, SMART_MAGNET_LIMIT);
+  const pinnedSet = new Set(pinnedPaths);
+  const remaining = Math.max(0, SMART_MAGNET_LIMIT - pinnedPaths.length);
+  const recommendedPaths = Object.entries(activity.fileStats)
+    .filter(([path]) => !pinnedSet.has(path))
+    .map(([path, stat]) => ({ path, stat, score: smartMagnetScore(stat, now) }))
+    .filter((entry) => Number.isFinite(entry.score))
+    .sort((a, b) => {
+      const scoreDiff = b.score - a.score;
+      if (scoreDiff) return scoreDiff;
+      const recentDiff = (Number(b.stat.lastOpened) || 0) - (Number(a.stat.lastOpened) || 0);
+      if (recentDiff) return recentDiff;
+      const countDiff = (Number(b.stat.count) || 0) - (Number(a.stat.count) || 0);
+      if (countDiff) return countDiff;
+      return a.path.localeCompare(b.path);
+    })
+    .slice(0, remaining)
+    .map((entry) => entry.path);
+
+  return { pinnedPaths, recommendedPaths };
 }
 
 function pruneFileStats(fileStats) {
@@ -1113,6 +1162,14 @@ function rewriteActivityPaths(value, oldPath, newPath) {
     todayPaths.unshift(path);
   }
 
+  const pinnedPaths = [];
+  const seenPinnedPaths = new Set();
+  for (const path of activity.pinnedPaths.map(rewritePath)) {
+    if (!path || seenPinnedPaths.has(path)) continue;
+    seenPinnedPaths.add(path);
+    pinnedPaths.push(path);
+  }
+
   const fileStats = {};
   for (const [path, stat] of Object.entries(activity.fileStats)) {
     const rewrittenPath = rewritePath(path);
@@ -1132,6 +1189,7 @@ function rewriteActivityPaths(value, oldPath, newPath) {
   return normalizeActivity({
     todayKey: activity.todayKey,
     todayPaths,
+    pinnedPaths,
     fileStats,
   });
 }
@@ -1370,6 +1428,7 @@ function buildTickMarks(items) {
       isFile: items[index].type === "file",
       isToday: Boolean(items[index].today),
       isMagnet: Boolean(items[index].magnet),
+      isPinned: Boolean(items[index].pinned),
     });
 
     const next = items[index + 1];
@@ -1908,6 +1967,7 @@ class FileExplorerRail {
     const containerRect = this.container.getBoundingClientRect();
     const todayPaths = this.plugin.getTodayPathSet();
     const frequentPaths = this.plugin.getFrequentPathSet();
+    const pinnedPaths = this.plugin.getPinnedPathSet();
 
     const candidates = [];
     for (const el of titles) {
@@ -1931,10 +1991,11 @@ class FileExplorerRail {
       const type = isFolder ? "folder" : "file";
       const active = type === "file" && path && path === activePath;
       const today = type === "file" && path && todayPaths.has(path);
-      const magnet = type === "file" && path && frequentPaths.has(path);
+      const pinned = type === "file" && path && pinnedPaths.has(path);
+      const magnet = type === "file" && path && (pinned || frequentPaths.has(path));
       const center = rect.top - containerRect.top + this.container.scrollTop + rect.height / 2;
 
-      nextItems.push({ el, center, path, type, active, today, magnet, renderedX: undefined });
+      nextItems.push({ el, center, path, type, active, today, magnet, pinned, renderedX: undefined });
     }
 
     for (const item of nextItems) {
@@ -1977,7 +2038,7 @@ class FileExplorerRail {
     );
 
     this.items = nextItems;
-    this.magnetItems = nextItems.filter((item) => item.magnet).slice(0, FREQUENT_MAGNET_LIMIT);
+    this.magnetItems = nextItems.filter((item) => item.magnet).slice(0, SMART_MAGNET_LIMIT);
     this.visualActiveIndex = nextItems.findIndex((item) => item.active);
     this.dynamicItemRange = [0, -1];
     if (!preserveTickMotion) {
@@ -2075,6 +2136,7 @@ class FileExplorerRail {
       el.classList.toggle("is-file", mark.isFile !== false);
       el.classList.toggle("is-today", Boolean(mark.isToday));
       el.classList.toggle("is-magnet", Boolean(mark.isMagnet));
+      el.classList.toggle("is-pinned", Boolean(mark.isPinned));
 
       const baseTransform = `translate3d(0px, -50%, 0) scaleX(${getTickBaseWidth(mark) / LINE_WIDTH})`;
       if (!preserveMotion) {
@@ -2619,7 +2681,7 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
 
     const licenseGroup = createGroup(
       "软件授权",
-      "纯离线 Ed25519 密钥激活验证",
+      "本地 Ed25519 签名验证与在线设备校验",
       true,
     );
 
@@ -2668,8 +2730,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
 
     // 1. Orb & Visual Appearance Group (Open by default)
     const orbBody = createGroup(
-      "Orb & Visual Appearance",
-      "Custom character, sports ball, emoji or gear orb styles.",
+      "小球与视觉",
+      "选择人物、运动球、表情或齿轮等小球样式。",
       true,
     );
 
@@ -2737,8 +2799,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
 
     // 2. Audio & Sound Feedback Group
     const audioBody = createGroup(
-      "Audio & Sound Feedback",
-      "Tick audio effects when dragging along rail ticks.",
+      "音效反馈",
+      "设置小球经过轨道刻度和落定时的声音。",
       false,
     );
 
@@ -2795,8 +2857,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
 
     // 3. Activity & Heatmap Group
     const activityBody = createGroup(
-      "Activity & Heatmap",
-      "Today's active file trail and frequent file magnets.",
+      "活动与磁吸",
+      "显示今日使用轨迹，并为固定或近期常用文件提供磁吸。",
       false,
     );
 
@@ -2812,8 +2874,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(activityBody)
-      .setName("高频文件磁吸")
-      .setDesc("拖动时为高频打开的文件提供轻柔磁吸。")
+      .setName("智能磁吸点")
+      .setDesc("固定文件优先，其余根据近期使用和打开频率提供轻柔磁吸。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.frequentMagnetsEnabled).onChange(async (value) => {
           this.plugin.settings.frequentMagnetsEnabled = value;
@@ -2824,8 +2886,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
 
     // 4. Drag & File Tree Interaction Group
     const interactionBody = createGroup(
-      "Drag & File Tree Interaction",
-      "Rail item visibility and hover auto-expand behavior.",
+      "拖动与文件树",
+      "设置轨道项目显示、松开行为和文件夹自动展开。",
       false,
     );
 
@@ -2884,6 +2946,9 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.saveQueue = Promise.resolve();
     this.todayPathSetCache = null;
     this.frequentPathSetCache = null;
+    this.pinnedPathSetCache = null;
+    this.magnetRankingCache = null;
+    this.magnetRankingCacheKey = "";
     this.runtimeStarted = false;
     this.observer = null;
     this.enabledDocuments = new Set();
@@ -2897,7 +2962,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
 
     this.addCommand({
       id: "toggle-folder-marks",
-      name: "Toggle folder marks",
+      name: "切换文件夹刻度",
       callback: async () => {
         this.settings.includeFolders = !this.settings.includeFolders;
         await this.saveSettings();
@@ -2907,7 +2972,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
 
     this.addCommand({
       id: "toggle-tick-sound",
-      name: "Toggle tick sound",
+      name: "切换拖动音效",
       callback: async () => {
         this.settings.soundEnabled = !this.settings.soundEnabled;
         await this.saveSettings();
@@ -2941,6 +3006,9 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     }));
     this.registerEvent(this.app.vault.on("delete", (file) => {
       this.rewriteActivityPath(file && file.path, null);
+    }));
+    this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+      this.addCrispRailMenuItem(menu, file);
     }));
     this.registerDomEvent(window, "resize", () => this.scheduleRefresh(), { passive: true });
 
@@ -3009,6 +3077,51 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   invalidateActivityCaches() {
     this.todayPathSetCache = null;
     this.frequentPathSetCache = null;
+    this.pinnedPathSetCache = null;
+    this.magnetRankingCache = null;
+    this.magnetRankingCacheKey = "";
+  }
+
+  addCrispRailMenuItem(menu, file) {
+    if (!menu || typeof menu.addItem !== "function" || !file || !file.path || Array.isArray(file.children)) return;
+    const pinned = normalizeActivity(this.settings && this.settings.activity).pinnedPaths.includes(file.path);
+    menu.addItem((item) => {
+      item
+        .setTitle(pinned ? "从 Crisp Rail 取消固定" : "固定到 Crisp Rail")
+        .setIcon(pinned ? "pin-off" : "pin")
+        .onClick(async () => {
+          const result = await this.togglePinnedPath(file.path);
+          if (!result.changed) {
+            new Notice(`Crisp Rail 最多固定 ${SMART_MAGNET_LIMIT} 个文件`);
+            return;
+          }
+          new Notice(result.pinned ? "已固定到 Crisp Rail" : "已从 Crisp Rail 取消固定");
+        });
+    });
+  }
+
+  async togglePinnedPath(path) {
+    if (!path) return { changed: false, pinned: false };
+    const activity = normalizeActivity(this.settings.activity);
+    const pinnedPaths = activity.pinnedPaths.slice();
+    const index = pinnedPaths.indexOf(path);
+    let pinned = false;
+
+    if (index >= 0) {
+      pinnedPaths.splice(index, 1);
+    } else {
+      if (pinnedPaths.length >= SMART_MAGNET_LIMIT) {
+        return { changed: false, pinned: false, limitReached: true };
+      }
+      pinnedPaths.push(path);
+      pinned = true;
+    }
+
+    this.settings.activity = normalizeActivity({ ...activity, pinnedPaths });
+    this.invalidateActivityCaches();
+    await this.saveSettings();
+    this.scheduleRefresh();
+    return { changed: true, pinned };
   }
 
   rewriteActivityPath(oldPath, newPath) {
@@ -3082,17 +3195,26 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     return this.frequentPathSetCache;
   }
 
+  getPinnedPathSet() {
+    if (!this.settings.frequentMagnetsEnabled) return new Set();
+    if (!this.pinnedPathSetCache) {
+      this.pinnedPathSetCache = new Set(this.getMagnetRanking().pinnedPaths);
+    }
+    return this.pinnedPathSetCache;
+  }
+
+  getMagnetRanking(now = Date.now()) {
+    const cacheKey = getLocalDateKey(new Date(now));
+    if (!this.magnetRankingCache || this.magnetRankingCacheKey !== cacheKey) {
+      this.magnetRankingCache = rankSmartMagnetPaths(this.settings.activity, now);
+      this.magnetRankingCacheKey = cacheKey;
+    }
+    return this.magnetRankingCache;
+  }
+
   getFrequentPaths() {
     if (!this.settings.frequentMagnetsEnabled) return [];
-    return Object.entries(this.settings.activity.fileStats)
-      .filter(([, value]) => value && (Number(value.count) || 0) >= FREQUENT_MAGNET_MIN_COUNT)
-      .sort(([, a], [, b]) => {
-        const countDiff = (Number(b.count) || 0) - (Number(a.count) || 0);
-        if (countDiff) return countDiff;
-        return (Number(b.lastOpened) || 0) - (Number(a.lastOpened) || 0);
-      })
-      .slice(0, FREQUENT_MAGNET_LIMIT)
-      .map(([currentPath]) => currentPath);
+    return this.getMagnetRanking().recommendedPaths;
   }
 
   expandFolderInExplorers(folderPath) {

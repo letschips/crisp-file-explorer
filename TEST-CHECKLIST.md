@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.2.55 测试清单
+# Crisp File Explorer v0.2.57 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,7 +6,7 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.2.55`。
+- [ ] `manifest.json` 版本为 `0.2.57`。
 - [ ] `assets/` 中不存在未引用的旧素材。
 - [ ] `main.js`、`styles.css` 和资源文件不包含本机绝对路径。
 - [ ] 新版授权码激活成功，旧版授权码被拒绝。
@@ -40,6 +40,10 @@
 - [ ] Tick、release 和 Match orb 音效按设置工作。
 - [ ] 修改设置后重载 Obsidian，设置仍然保留。
 - [ ] 重命名或删除文件/文件夹后，今日轨迹与常用文件统计不保留旧路径。
+- [ ] 文件右键菜单可以固定或取消固定到 Crisp Rail，文件夹菜单不显示该操作。
+- [ ] 固定点最多 8 个，固定点使用更实的圆点，智能推荐使用原有淡色圆点。
+- [ ] 重命名、移动或删除固定文件及其父文件夹后，固定路径同步更新或清理。
+- [ ] 智能推荐优先近期使用文件，超过 90 天未打开的非固定文件退出候选。
 
 ## 兼容性与性能
 
@@ -57,6 +61,6 @@
 ## 发布检查
 
 - [ ] 待主仓库验收后，再同步其他运行仓库；各仓库分别保留自己的 `data.json`。
-- [ ] 各目标仓库均重载到 v0.2.55。
-- [ ] 分享 ZIP 仅包含 `main.js`、`styles.css`、`manifest.json` 和实际引用的 `assets/`。
+- [ ] 各目标仓库均重载到 v0.2.57。
+- [ ] 分享 ZIP 仅包含 `main.js`、`styles.css` 和 `manifest.json`；Orb 已内联，不包含源 `assets/`。
 - [ ] 分享 ZIP 不包含 `data.json`、测试、说明文档、本机路径或私密配置。
