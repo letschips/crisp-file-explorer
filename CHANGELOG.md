@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.58] - 2026-08-13 (Folder Target Label Offset)
+
+### Fixed
+- 当 orb 定位到文件夹时，文件夹标题复用活动文件的横向位移，避免刻度线与文件名重叠。
+- 覆盖两类路径：当前文件不可见时回退到可见父文件夹，以及拖动后停留在文件夹但未打开该文件夹。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过（76/76）。
+- ALL、YS、AI-native Knowledge System 运行文件已同步，`main.js` SHA-256 一致。
+- ALL/YS 重载后运行时加载检查通过，`dev:errors` 无新增错误。
+- 未修改文件夹刻度长度、弹簧、拖动、磁吸或音效参数。
+
 ## [0.2.57] - 2026-08-12 (Smart Magnet Stations)
 
 ### Added

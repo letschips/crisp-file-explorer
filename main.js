@@ -2058,6 +2058,9 @@ class FileExplorerRail {
 
     const activeItem = this.visualActiveIndex >= 0 ? this.items[this.visualActiveIndex] : null;
     const activeTargetItem = activeItem || findVisibleAncestorItem(this.items, activePath);
+    if (activeTargetItem && this.visualActiveIndex < 0) {
+      this.visualActiveIndex = this.items.indexOf(activeTargetItem);
+    }
     const hasCurrentPosition = hadOrbPosition;
     const currentPosition = this.targetY || this.displayY;
     const first = this.items[0];
@@ -2305,7 +2308,7 @@ class FileExplorerRail {
         const distance = item.center - this.displayY;
         const progress = morphProgress(distance);
         x = mix(waveOffset(this.displayY, item.center), ACTIVE_LABEL_TRANSLATE_X, progress);
-      } else if (item.active) {
+      } else if (item.active || this.visualActiveIndex === index) {
         x = ACTIVE_LABEL_TRANSLATE_X;
       }
 

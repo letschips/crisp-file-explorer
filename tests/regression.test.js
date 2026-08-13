@@ -563,6 +563,52 @@ test("stable far-away rows are not rewritten on every animation frame", () => {
   assert.equal(itemStyle.translate, "");
 });
 
+test("folder visual target shares the active file label offset", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  const itemStyle = {
+    _translate: "",
+    set translate(value) {
+      this._translate = value;
+    },
+    get translate() {
+      return this._translate;
+    },
+  };
+  const item = {
+    center: 0,
+    active: false,
+    el: {
+      style: itemStyle,
+      classList: fakeClassList(),
+    },
+  };
+  const controller = {
+    displayY: 0,
+    isDragging: false,
+    tickSideMap: new Map(),
+    tickMarks: [],
+    tickEls: [],
+    items: [item],
+    dynamicTickRange: [0, -1],
+    dynamicItemRange: [0, -1],
+    nearestTickIndex: -1,
+    visualActiveIndex: 0,
+    orb: {
+      style: {},
+      classList: fakeClassList(),
+      dataset: { orbStyle: "default" },
+      querySelector: () => null,
+    },
+    container: { scrollTop: 0 },
+    updateRailLineFocus() {},
+    renderOrbBall: FileExplorerRail.prototype.renderOrbBall,
+  };
+
+  FileExplorerRail.prototype.render.call(controller);
+
+  assert.equal(itemStyle.translate, "34px 0px");
+});
+
 test("tick motion uses scaleX without per-frame width writes", () => {
   const { FileExplorerRail } = loadPluginRuntime();
   let widthWrites = 0;
