@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.59] - 2026-08-24 (Drag Release State Polish)
+
+### Fixed
+- 关闭“松开打开项目”后，拖动结束会回到当前活动文件，不再将 orb 和高亮停留在未打开的项目上。
+- 文件浏览器在主窗口与独立窗口间迁移时，拖动监听器会从原绑定窗口正确清理。
+
 ## [0.2.58] - 2026-08-13 (Folder Target Label Offset)
 
 ### Fixed

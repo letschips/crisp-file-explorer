@@ -1827,6 +1827,68 @@ test("window blur cancels a drag and requests a clean file-tree refresh", () => 
   assert.equal(frames, 1);
 });
 
+test("pointer release without navigation restores the active file target", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  let refreshes = 0;
+  const controller = {
+    destroyed: false,
+    isDragging: true,
+    dragPointerId: 9,
+    displayY: 100,
+    items: [{ center: 100, type: "file", path: "other.md", el: {} }],
+    autoExpandedFolderPaths: new Set(),
+    plugin: {
+      settings: {
+        releaseSoundEnabled: false,
+        openOnDragRelease: false,
+      },
+      scheduleRefresh() { refreshes += 1; },
+    },
+    orb: { dataset: { orbStyle: "default" } },
+    updateDrag() {},
+    setDragging(active) { this.isDragging = active; },
+    releasePointerCapture() {},
+    cancelDragScroll() {},
+    clearAutoExpandTimer() {},
+    cleanupDragListeners() {},
+    requestFrame() {},
+  };
+
+  FileExplorerRail.prototype.handlePointerUp.call(controller, {
+    type: "pointerup",
+    pointerId: 9,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  assert.equal(refreshes, 1);
+});
+
+test("drag cleanup removes listeners from the window where they were bound", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  const previousRemovals = [];
+  const nextRemovals = [];
+  const previousWindow = {
+    removeEventListener(type) { previousRemovals.push(type); },
+  };
+  const nextWindow = {
+    removeEventListener(type) { nextRemovals.push(type); },
+  };
+  const controller = {
+    container: { ownerDocument: { defaultView: nextWindow } },
+    dragOwnerWindow: previousWindow,
+    onPointerMove() {},
+    onPointerUp() {},
+    onWindowBlur() {},
+  };
+
+  FileExplorerRail.prototype.cleanupDragListeners.call(controller);
+
+  assert.deepEqual(previousRemovals, ["pointermove", "pointerup", "pointercancel", "blur"]);
+  assert.deepEqual(nextRemovals, []);
+  assert.equal(controller.dragOwnerWindow, null);
+});
+
 test("destroyed controllers ignore pointer move and up events", () => {
   const { FileExplorerRail } = loadPluginRuntime();
   let moveCalls = 0;

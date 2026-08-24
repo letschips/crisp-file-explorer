@@ -1665,6 +1665,7 @@ class FileExplorerRail {
     this.lastFrameTime = undefined;
     this.isDragging = false;
     this.dragPointerId = null;
+    this.dragOwnerWindow = null;
     this.dragScrollFrame = null;
     this.dragPointerViewportY = 0;
     this.lastDragIndex = -1;
@@ -2387,6 +2388,7 @@ class FileExplorerRail {
 
     // 使用 bubble phase（默认），不用 capture，避免拦截其他面板的事件
     const ownerWindow = getOwnerWindow(this.container);
+    this.dragOwnerWindow = ownerWindow;
     ownerWindow.addEventListener("pointermove", this.onPointerMove, { passive: false });
     ownerWindow.addEventListener("pointerup", this.onPointerUp, { passive: false });
     ownerWindow.addEventListener("pointercancel", this.onPointerUp, { passive: false });
@@ -2395,11 +2397,13 @@ class FileExplorerRail {
   
   cleanupDragListeners() {
     // 只清理 bubble 模式的监听器（不再使用 capture）
-    const ownerWindow = getOwnerWindow(this.container);
+    const ownerWindow = this.dragOwnerWindow || getOwnerWindow(this.container);
+    if (!ownerWindow) return;
     ownerWindow.removeEventListener("pointermove", this.onPointerMove, false);
     ownerWindow.removeEventListener("pointerup", this.onPointerUp, false);
     ownerWindow.removeEventListener("pointercancel", this.onPointerUp, false);
     ownerWindow.removeEventListener("blur", this.onWindowBlur, false);
+    this.dragOwnerWindow = null;
   }
 
   cancelDragScroll() {
@@ -2466,6 +2470,7 @@ class FileExplorerRail {
 
     const index = nearestIndex(this.items, this.displayY);
     const item = this.items[index];
+    let didNavigate = false;
     if (item && this.plugin.settings.releaseSoundEnabled && !prefersReducedMotion.matches) {
       this.plugin.audio.release(resolveSoundStyle(this.plugin.settings.soundStyle, this.orb.dataset.orbStyle), this.ownerWindow);
     }
@@ -2474,9 +2479,13 @@ class FileExplorerRail {
       if (!skipAutoExpandedFolder) {
         this.plugin.lockInteraction();
         dispatchMouseSequence(item.el);
+        didNavigate = true;
       }
     }
     this.autoExpandedFolderPaths.clear();
+    if (!didNavigate && this.plugin && typeof this.plugin.scheduleRefresh === "function") {
+      this.plugin.scheduleRefresh();
+    }
     this.requestFrame();
   }
 
