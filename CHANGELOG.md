@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.60] - 2026-08-30 (Sidebar Resize Stability)
+
+### Fixed
+- 调整左侧文件栏宽度时，活动标题不再反复清除并恢复横向位移，避免选中标题持续闪动。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过（80/80）。
+- 在真实 Obsidian 中连续重新测量文件树，活动标题位移保持稳定。
+
 ## [0.2.59] - 2026-08-24 (Drag Release State Polish)
 
 ### Fixed

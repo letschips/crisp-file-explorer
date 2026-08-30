@@ -1471,6 +1471,25 @@ function hasStableTickTopology(previousItems, nextItems, previousTicks, nextTick
   return true;
 }
 
+function reconcileMeasuredItemMotion(previousItems, nextItems, dynamicItemRange, preserveMotion) {
+  const [start, end] = dynamicItemRange || [0, -1];
+
+  for (let index = start; index <= end; index += 1) {
+    const previous = previousItems[index];
+    if (!previous) continue;
+    const next = nextItems[index];
+    if (preserveMotion && next && next.el === previous.el) {
+      next.renderedX = previous.renderedX;
+      continue;
+    }
+    if (previous.renderedX !== undefined) {
+      previous.el.style.removeProperty("translate");
+    }
+  }
+
+  return preserveMotion ? [start, end] : [0, -1];
+}
+
 function dispatchMouseSequence(el) {
   const ownerWindow = getOwnerWindow(el);
   const MouseEventConstructor = ownerWindow.MouseEvent;
@@ -2024,12 +2043,6 @@ class FileExplorerRail {
       }
     }
 
-    const [previousDynamicStart, previousDynamicEnd] = this.dynamicItemRange;
-    for (let index = previousDynamicStart; index <= previousDynamicEnd; index += 1) {
-      const item = previousItems[index];
-      if (item) item.el.style.removeProperty("translate");
-    }
-
     const nextTickMarks = buildTickMarks(nextItems);
     const preserveTickMotion = hasStableTickTopology(
       previousItems,
@@ -2037,11 +2050,17 @@ class FileExplorerRail {
       previousTickMarks,
       nextTickMarks,
     );
+    const nextDynamicItemRange = reconcileMeasuredItemMotion(
+      previousItems,
+      nextItems,
+      this.dynamicItemRange,
+      preserveTickMotion,
+    );
 
     this.items = nextItems;
     this.magnetItems = nextItems.filter((item) => item.magnet).slice(0, SMART_MAGNET_LIMIT);
     this.visualActiveIndex = nextItems.findIndex((item) => item.active);
-    this.dynamicItemRange = [0, -1];
+    this.dynamicItemRange = nextDynamicItemRange;
     if (!preserveTickMotion) {
       this.dynamicTickRange = [0, -1];
       this.nearestTickIndex = -1;

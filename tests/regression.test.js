@@ -13,6 +13,7 @@ function loadPluginRuntime(overrides = {}) {
     indexRangeAround: typeof indexRangeAround === "function" ? indexRangeAround : undefined,
     mutationTouchesFileTree: typeof mutationTouchesFileTree === "function" ? mutationTouchesFileTree : undefined,
     hasStableTickTopology: typeof hasStableTickTopology === "function" ? hasStableTickTopology : undefined,
+    reconcileMeasuredItemMotion: typeof reconcileMeasuredItemMotion === "function" ? reconcileMeasuredItemMotion : undefined,
     normalizeActivity: typeof normalizeActivity === "function" ? normalizeActivity : undefined,
     rankSmartMagnetPaths: typeof rankSmartMagnetPaths === "function" ? rankSmartMagnetPaths : undefined,
     resolveOrbTarget: typeof resolveOrbTarget === "function" ? resolveOrbTarget : undefined,
@@ -831,6 +832,104 @@ test("rows leaving the motion range release their inline translate", () => {
 
   assert.deepEqual(removed, ["translate"]);
   assert.equal(zeroWrites, 0);
+});
+
+test("stable resize refresh preserves the active row translation until the next render", () => {
+  const { reconcileMeasuredItemMotion } = loadPluginRuntime();
+  assert.equal(typeof reconcileMeasuredItemMotion, "function");
+
+  const removed = [];
+  const activeElement = {
+    style: { removeProperty: (name) => removed.push(name) },
+  };
+  const previousItems = [{ el: activeElement, renderedX: 34 }];
+  const nextItems = [{ el: activeElement, renderedX: undefined }];
+
+  const nextRange = reconcileMeasuredItemMotion(
+    previousItems,
+    nextItems,
+    [0, 0],
+    true,
+  );
+
+  assert.deepEqual(Array.from(nextRange), [0, 0]);
+  assert.equal(nextItems[0].renderedX, 34);
+  assert.deepEqual(removed, []);
+});
+
+test("file-tree remeasurement keeps stable active-row motion applied", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  const removed = [];
+  const activeElement = {
+    classList: fakeClassList("nav-file-title", "crisp-fe-item", "crisp-fe-file", "crisp-fe-active"),
+    closest() { return null; },
+    getAttribute(name) { return name === "data-path" ? "notes/active.md" : null; },
+    getBoundingClientRect() { return { top: 40, height: 20 }; },
+    style: { removeProperty: (name) => removed.push(name) },
+  };
+  const controller = {
+    destroyed: false,
+    container: {
+      isConnected: true,
+      scrollTop: 0,
+      scrollHeight: 400,
+      clientHeight: 300,
+      querySelectorAll() { return [activeElement]; },
+      getBoundingClientRect() { return { top: 0 }; },
+      style: { setProperty() {} },
+    },
+    plugin: {
+      settings: { orbStyle: "default", includeFolders: true },
+      app: { workspace: { getActiveFile: () => ({ path: "notes/active.md" }) } },
+      getTodayPathSet: () => new Set(),
+      getFrequentPathSet: () => new Set(),
+      getPinnedPathSet: () => new Set(),
+    },
+    orb: { dataset: { orbStyle: "default" } },
+    items: [{
+      el: activeElement,
+      center: 50,
+      path: "notes/active.md",
+      type: "file",
+      active: true,
+      today: false,
+      magnet: false,
+      pinned: false,
+      renderedX: 34,
+    }],
+    tickMarks: [{
+      y: 50,
+      kind: "long",
+      itemIndex: 0,
+      isFile: true,
+      isToday: false,
+      isMagnet: false,
+      isPinned: false,
+    }],
+    hasOrbPosition: true,
+    displayY: 50,
+    targetY: 50,
+    isDragging: false,
+    dynamicItemRange: [0, 0],
+    dynamicTickRange: [0, 0],
+    nearestTickIndex: 0,
+    syncOwnerContext() {},
+    isVisible: () => true,
+    setEnabled() {},
+    syncEmptyState() {},
+    updateRailLineBounds() {},
+    syncTickElements() {},
+    syncDragPositionAfterMeasure: () => false,
+    ensureItemVisible() {},
+    render() {},
+    requestFrame() {},
+  };
+
+  FileExplorerRail.prototype.refresh.call(controller);
+
+  assert.equal(controller.items[0].renderedX, 34);
+  assert.deepEqual(Array.from(controller.dynamicItemRange), [0, 0]);
+  assert.deepEqual(removed, []);
 });
 
 test("pointer movement reads the container layout only once", () => {
