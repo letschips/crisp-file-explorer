@@ -2094,6 +2094,9 @@ class FileExplorerRail {
       hasCurrentPosition,
       clampedCurrentPosition
     );
+    if (this.visualActiveIndex < 0 && this.items.length) {
+      this.visualActiveIndex = nearestIndex(this.items, nextTarget);
+    }
     if (activeItem && options.reveal) {
       this.ensureItemVisible(activeItem);
     }

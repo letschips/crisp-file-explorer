@@ -446,6 +446,62 @@ test("a transient missing active file preserves the current orb target", () => {
   assert.equal(resolveOrbTarget(items, { center: 110 }, true, 125), 110);
 });
 
+test("a retained folder target still offsets its label when no file is active", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  const createTitle = (path, top, isFolder) => ({
+    classList: fakeClassList(isFolder ? "nav-folder-title" : "nav-file-title"),
+    closest() { return null; },
+    getAttribute(name) { return name === "data-path" ? path : null; },
+    getBoundingClientRect() { return { top, height: 20 }; },
+    style: { removeProperty() {} },
+  });
+  const firstFile = createTitle("AGENTS.md", 20, false);
+  const targetFolder = createTitle("Topics", 60, true);
+  const controller = {
+    destroyed: false,
+    container: {
+      isConnected: true,
+      scrollTop: 0,
+      scrollHeight: 300,
+      clientHeight: 240,
+      querySelectorAll() { return [firstFile, targetFolder]; },
+      getBoundingClientRect() { return { top: 0 }; },
+      style: { setProperty() {} },
+    },
+    plugin: {
+      settings: { orbStyle: "default", includeFolders: true },
+      app: { workspace: { getActiveFile: () => null } },
+      getTodayPathSet: () => new Set(),
+      getFrequentPathSet: () => new Set(),
+      getPinnedPathSet: () => new Set(),
+    },
+    orb: { dataset: { orbStyle: "default" } },
+    items: [],
+    tickMarks: [],
+    hasOrbPosition: true,
+    displayY: 70,
+    targetY: 70,
+    isDragging: false,
+    dynamicItemRange: [0, -1],
+    dynamicTickRange: [0, -1],
+    nearestTickIndex: -1,
+    syncOwnerContext() {},
+    isVisible: () => true,
+    setEnabled() {},
+    syncEmptyState() {},
+    updateRailLineBounds() {},
+    syncTickElements() {},
+    syncDragPositionAfterMeasure: () => false,
+    render() {},
+    requestFrame() {},
+  };
+
+  FileExplorerRail.prototype.refresh.call(controller);
+
+  assert.equal(controller.visualActiveIndex, 1);
+  assert.equal(controller.items[controller.visualActiveIndex].path, "Topics");
+});
+
 test("queued plugin refreshes are ignored after unload starts", () => {
   const { PluginClass, scheduledFrames } = loadPluginRuntime();
   const plugin = Object.create(PluginClass.prototype);

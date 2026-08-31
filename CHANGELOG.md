@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.61] - 2026-08-31 (Empty-State Folder Label Offset)
+
+### Fixed
+- 没有文件打开时，orb 所在文件夹标题会继续为横线留出空间，避免横线与文件夹名称重叠。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过（81/81）。
+- 未修改横线宽度、小球动画、弹簧、拖动、磁吸或音效参数。
+
 ## [0.2.60] - 2026-08-30 (Sidebar Resize Stability)
 
 ### Fixed
