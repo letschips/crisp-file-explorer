@@ -1747,8 +1747,16 @@ class FileExplorerRail {
     const MutationObserverClass = this.ownerWindow && this.ownerWindow.MutationObserver
       ? this.ownerWindow.MutationObserver
       : MutationObserver;
-    this.resizeObserver = new ResizeObserverClass(() => this.scheduleRefresh());
+    this.resizeObserver = new ResizeObserverClass(() => {
+      if (!this.enabled && this.isVisible()) {
+        this.setEnabled(true);
+      }
+      this.scheduleRefresh();
+    });
     this.mutationObserver = new MutationObserverClass((mutations) => {
+      if (!this.enabled && this.isVisible()) {
+        this.setEnabled(true);
+      }
       if (mutationTouchesFileTree(mutations)) {
         clearOwnerTimeout(this.container, this.mutationDebounceTimer);
         this.mutationDebounceTimer = setOwnerTimeout(this.container, () => {
@@ -1810,6 +1818,10 @@ class FileExplorerRail {
 
   destroy() {
     this.destroyed = true;
+    if (this.transitionTimer) {
+      clearTimeout(this.transitionTimer);
+      this.transitionTimer = null;
+    }
     cancelOwnerFrame(this.container, this.frame);
     cancelOwnerFrame(this.container, this.measureFrame);
     cancelOwnerFrame(this.container, this.dragScrollFrame);
@@ -1952,8 +1964,17 @@ class FileExplorerRail {
   }
 
   scheduleRefresh(options = {}) {
-    if (this.destroyed || !this.enabled) return;
+    if (this.destroyed) return;
+    if (!this.enabled) {
+      if (this.isVisible()) {
+        this.setEnabled(true);
+      } else {
+        return;
+      }
+    }
     this.pendingReveal = this.pendingReveal || Boolean(options.reveal);
+    this.pendingImmediate = this.pendingImmediate || Boolean(options.immediate);
+    this.pendingTransition = this.pendingTransition || Boolean(options.transition);
     if (this.measureQueued) return;
 
     this.measureQueued = true;
@@ -1961,8 +1982,12 @@ class FileExplorerRail {
       this.measureFrame = null;
       this.measureQueued = false;
       const reveal = this.pendingReveal;
+      const immediate = this.pendingImmediate;
+      const transition = this.pendingTransition;
       this.pendingReveal = false;
-      this.refresh({ reveal });
+      this.pendingImmediate = false;
+      this.pendingTransition = false;
+      this.refresh({ reveal, immediate, transition });
     });
   }
 
@@ -2103,8 +2128,31 @@ class FileExplorerRail {
     if (activeItem && options.reveal) {
       this.ensureItemVisible(activeItem);
     }
+    const shouldTransition = Boolean(
+      options.transition &&
+      hadOrbPosition &&
+      !options.immediate &&
+      !this.isDragging &&
+      !prefersReducedMotion.matches &&
+      Math.abs(this.displayY - nextTarget) > 1
+    );
+
     this.targetY = nextTarget;
-    if (hadOrbPosition && !options.immediate && !this.isDragging && first && last) {
+    if (shouldTransition) {
+      const transitionStyle = "transform 220ms cubic-bezier(0.2, 0, 0, 1)";
+      if (this.orb && this.orb.style) this.orb.style.transition = transitionStyle;
+      if (this.lineFocus && this.lineFocus.style) this.lineFocus.style.transition = transitionStyle;
+
+      this.displayY = nextTarget;
+      this.velocity = 0;
+
+      if (this.transitionTimer) clearTimeout(this.transitionTimer);
+      this.transitionTimer = setTimeout(() => {
+        this.transitionTimer = null;
+        if (this.orb && this.orb.style) this.orb.style.transition = "";
+        if (this.lineFocus && this.lineFocus.style) this.lineFocus.style.transition = "";
+      }, 240);
+    } else if (hadOrbPosition && !options.immediate && !this.isDragging && first && last) {
       this.displayY = clamp(this.container.scrollTop + previousViewportY, first.center, last.center);
     } else if (!hadOrbPosition) {
       this.displayY = nextTarget;
@@ -2392,6 +2440,13 @@ class FileExplorerRail {
     if (this.isDragging || !this.items.length || event.isPrimary === false || isSecondaryPointer) return;
     event.preventDefault();
     event.stopPropagation();
+
+    if (this.transitionTimer) {
+      clearTimeout(this.transitionTimer);
+      this.transitionTimer = null;
+    }
+    if (this.orb && this.orb.style) this.orb.style.transition = "";
+    if (this.lineFocus && this.lineFocus.style) this.lineFocus.style.transition = "";
 
     // 先清理可能残留的监听器，避免重复绑定
     this.cleanupDragListeners();
@@ -3018,22 +3073,62 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
 
   }
 
+  getOpenMarkdownPaths() {
+    const leaves = this.app && this.app.workspace && typeof this.app.workspace.getLeavesOfType === "function"
+      ? this.app.workspace.getLeavesOfType("markdown")
+      : [];
+    const paths = new Set();
+    for (const leaf of leaves) {
+      const p = leaf && leaf.view && leaf.view.file && leaf.view.file.path;
+      if (p) paths.add(p);
+    }
+    return paths;
+  }
+
   startRuntime() {
     if (this.runtimeStarted || this.unloading) return;
     this.runtimeStarted = true;
+    this.openMarkdownPaths = this.getOpenMarkdownPaths();
     this.enhanceFileExplorers();
+    this.scheduleRefresh({ immediate: true, reveal: true });
 
-    this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleRefresh()));
-    this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+    for (const delay of [60, 180, 450, 900]) {
+      window.setTimeout(() => {
+        if (!this.unloading) this.scheduleRefresh({ immediate: true, reveal: true });
+      }, delay);
+    }
+
+    this.registerEvent(this.app.workspace.on("layout-change", () => {
+      this.openMarkdownPaths = this.getOpenMarkdownPaths();
       this.scheduleRefresh();
-      if (this.isMarkdownActiveLeaf()) this.scheduleActiveReveal();
+    }));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+      const activeFile = this.app && this.app.workspace && typeof this.app.workspace.getActiveFile === "function"
+        ? this.app.workspace.getActiveFile()
+        : null;
+      const isAlreadyOpen = Boolean(
+        activeFile && activeFile.path && this.openMarkdownPaths && this.openMarkdownPaths.has(activeFile.path)
+      );
+      this.openMarkdownPaths = this.getOpenMarkdownPaths();
+      this.scheduleRefresh();
+      if (this.isMarkdownActiveLeaf()) {
+        this.scheduleActiveReveal({ transition: !isAlreadyOpen });
+      }
     }));
     this.registerEvent(this.app.workspace.on("file-open", (file) => {
       this.recordFileActivity(file);
+      const isAlreadyOpen = Boolean(
+        file && file.path && this.openMarkdownPaths && this.openMarkdownPaths.has(file.path)
+      );
+      if (file && file.path) {
+        if (!this.openMarkdownPaths) this.openMarkdownPaths = new Set();
+        this.openMarkdownPaths.add(file.path);
+      }
+      const transition = !isAlreadyOpen;
       if (file && file.extension === "md") {
-        this.scheduleActiveReveal();
+        this.scheduleActiveReveal({ transition });
       } else {
-        this.scheduleRefresh();
+        this.scheduleRefresh({ transition });
       }
     }));
     this.registerEvent(this.app.workspace.on("window-open", () => this.scheduleRefresh()));
@@ -3310,14 +3405,17 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.activeRevealFrame = null;
   }
 
-  runActiveRevealAttempt(runId) {
+  runActiveRevealAttempt(runId, options = {}) {
     if (runId !== this.activeRevealRunId) return false;
     const didReveal = this.revealActiveFileInExplorer();
     if (didReveal) {
       this.cancelActiveRevealFrame();
       this.clearActiveRevealTimers();
     }
-    this.scheduleRefresh(didReveal ? { reveal: true } : {});
+    this.scheduleRefresh({
+      ...(didReveal ? { reveal: true } : {}),
+      ...options,
+    });
     return didReveal;
   }
 
@@ -3346,13 +3444,13 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     return false;
   }
 
-  scheduleActiveReveal() {
+  scheduleActiveReveal(options = {}) {
     if (this.unloading) return;
     if (this.isInteractionLocked()) {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
       this.clearActiveRevealTimers();
-      this.scheduleRefresh();
+      this.scheduleRefresh(options);
       return;
     }
 
@@ -3360,7 +3458,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
       this.clearActiveRevealTimers();
-      this.scheduleRefresh();
+      this.scheduleRefresh(options);
       return;
     }
 
@@ -3371,7 +3469,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
       this.clearActiveRevealTimers();
-      this.scheduleRefresh();
+      this.scheduleRefresh(options);
       return;
     }
 
@@ -3383,13 +3481,13 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.activeRevealFrame = requestAnimationFrame(() => {
       this.activeRevealFrame = null;
       if (runId !== this.activeRevealRunId) return;
-      this.runActiveRevealAttempt(runId);
+      this.runActiveRevealAttempt(runId, options);
     });
 
     for (const delay of ACTIVE_REVEAL_RETRY_DELAYS) {
       const timer = window.setTimeout(() => {
         this.activeRevealTimers = this.activeRevealTimers.filter((current) => current !== timer);
-        this.runActiveRevealAttempt(runId);
+        this.runActiveRevealAttempt(runId, options);
       }, delay);
       this.activeRevealTimers.push(timer);
     }
@@ -3481,6 +3579,8 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   scheduleRefresh(options = {}) {
     if (this.unloading) return;
     this.pendingRefreshReveal = this.pendingRefreshReveal || Boolean(options.reveal);
+    this.pendingRefreshImmediate = this.pendingRefreshImmediate || Boolean(options.immediate);
+    this.pendingRefreshTransition = this.pendingRefreshTransition || Boolean(options.transition);
     if (this.refreshQueued) return;
     this.refreshQueued = true;
     this.refreshFrame = requestAnimationFrame(() => {
@@ -3488,13 +3588,21 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       this.refreshQueued = false;
       if (this.unloading) {
         this.pendingRefreshReveal = false;
+        this.pendingRefreshImmediate = false;
+        this.pendingRefreshTransition = false;
         return;
       }
       const reveal = this.pendingRefreshReveal;
+      const immediate = this.pendingRefreshImmediate;
+      const transition = this.pendingRefreshTransition;
       this.pendingRefreshReveal = false;
+      this.pendingRefreshImmediate = false;
+      this.pendingRefreshTransition = false;
       const createdControllers = this.enhanceFileExplorers();
       for (const controller of this.controllers.values()) {
-        if (controller.enabled && !createdControllers.has(controller)) controller.refresh({ reveal });
+        if (controller.enabled && !createdControllers.has(controller)) {
+          controller.refresh({ reveal, immediate, transition });
+        }
       }
     });
   }

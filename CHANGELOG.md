@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.63] - 2026-09-02 (Cold Open Smooth Transition & Fast Startup)
+
+### Fixed
+- 初次打开新 Markdown 文档时，小球采用独立的 GPU 硬件平滑滑动（220ms），消除 CodeMirror 6 编辑器冷构建与排版造成的动画掉帧和跳字感。
+- 修复 Obsidian 冷启动时侧边栏尺寸初始化死锁导致的 3 秒挂载延迟，现在随侧边栏同步毫秒级呈现小球与刻度线。
+- 在已有标签页之间切换和手动拖拽小球时，继续保持原有极致丝滑的物理弹簧与惯性手感。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过（82/82）。
+- 在真实 Obsidian 环境中验证初次打开文档平滑过渡与冷启动即时呈现。
+
 ## [0.2.62] - 2026-09-02 (Drag Sound Style Preservation)
 
 ### Fixed
