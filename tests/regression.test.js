@@ -1892,6 +1892,8 @@ test("all orb artwork is bundled inline without machine-specific paths", () => {
     snorlax: { asset: "assets/snorlax.svg", label: "Snorlax" },
     pikachu: { asset: "assets/pikachu.svg", label: "Pikachu" },
     pokeball: { asset: "assets/poke-ball.svg", label: "Poke Ball" },
+    dizzy: { asset: "assets/dizzy.svg", label: "Dizzy Emoji" },
+    vinyl: { asset: "assets/vinyl.svg", label: "Vinyl" },
     bracelet: { asset: "assets/bracelet.svg", label: "Bracelet" },
     snorlaxface: { asset: "assets/snorlax-face.svg", label: "Snorlax Face" },
     fear: { asset: "assets/fear.svg", label: "Fear" },
@@ -1951,7 +1953,7 @@ test("runtime ships inline orbs with no separate asset dependency", () => {
 test("character PNG data URLs stay upright while circular SVGs rotate", () => {
   const { ORB_IMAGE_DATA_URLS, RANDOM_DAILY_ORB_STYLES, STATIC_ORB_STYLES } = loadPluginRuntime();
   const staticStyles = ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5"];
-  const rotatingStyles = ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield"];
+  const rotatingStyles = ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield", "dizzy", "vinyl"];
 
   assert.match(ORB_IMAGE_DATA_URLS.character1, /^data:image\/png;base64,/);
   assert.match(ORB_IMAGE_DATA_URLS.character2, /^data:image\/png;base64,/);

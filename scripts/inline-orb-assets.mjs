@@ -20,6 +20,7 @@ const ASSET_STYLES = {
   "character4.svg": "character4",
   "character5.svg": "character5",
   "devil.svg": "devil",
+  "dizzy.svg": "dizzy",
   "face-mask.svg": "facemask",
   "fan.svg": "fan",
   "fear.svg": "fear",
@@ -37,6 +38,7 @@ const ASSET_STYLES = {
   "superman.svg": "superman",
   "taiga.svg": "taiga",
   "tennis.svg": "tennis",
+  "vinyl.svg": "vinyl",
 };
 
 function escapeTemplateLiteral(value) {
