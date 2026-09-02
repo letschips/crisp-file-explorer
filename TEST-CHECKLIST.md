@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.2.61 测试清单
+# Crisp File Explorer v0.2.62 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,7 +6,7 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.2.61`。
+- [ ] `manifest.json` 版本为 `0.2.62`。
 - [ ] `assets/` 中不存在未引用的旧素材。
 - [ ] `main.js`、`styles.css` 和资源文件不包含本机绝对路径。
 - [ ] 新版授权码激活成功，旧版授权码被拒绝。
@@ -43,6 +43,7 @@
 - [ ] 静态人物保持正向；旋转类素材围绕自身中心旋转。
 - [ ] `Random per day` 在同一天保持稳定。
 - [ ] Tick、release 和 Match orb 音效按设置工作。
+- [ ] 开启“音高滑动”后，各拖动音效保留所选音色，并随位置升高音高。
 - [ ] 修改设置后重载 Obsidian，设置仍然保留。
 - [ ] 重命名或删除文件/文件夹后，今日轨迹与常用文件统计不保留旧路径。
 - [ ] 文件右键菜单可以固定或取消固定到 Crisp Rail，文件夹菜单不显示该操作。
@@ -66,6 +67,6 @@
 ## 发布检查
 
 - [ ] 待主仓库验收后，再同步其他运行仓库；各仓库分别保留自己的 `data.json`。
-- [ ] 各目标仓库均重载到 v0.2.61。
+- [ ] 各目标仓库均重载到 v0.2.62。
 - [ ] 分享 ZIP 仅包含 `main.js`、`styles.css` 和 `manifest.json`；Orb 已内联，不包含源 `assets/`。
 - [ ] 分享 ZIP 不包含 `data.json`、测试、说明文档、本机路径或私密配置。

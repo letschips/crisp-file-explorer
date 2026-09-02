@@ -1599,26 +1599,29 @@ class CrispAudio {
       if (resolvedStyle === "wood") resolvedStyle = "wooden";
       if (resolvedStyle === "digital") resolvedStyle = "mechanical";
 
-      if (resolvedStyle === "scale" || pitchScale) {
+      const clampedProgress = Math.max(0, Math.min(1, progress || 0));
+      const pitchMultiplier = pitchScale ? Math.pow(2, clampedProgress - 0.5) : 1;
+      const pitch = (frequency) => frequency * pitchMultiplier;
+
+      if (resolvedStyle === "scale") {
         const pentatonicScale = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66, 1318.51, 1567.98, 1760.00];
-        const clampProgress = Math.max(0, Math.min(1, progress || 0));
-        const index = Math.floor(clampProgress * (pentatonicScale.length - 0.01));
+        const index = Math.floor(clampedProgress * (pentatonicScale.length - 0.01));
         const freq = pentatonicScale[index];
         this.playTone({ type: "sine", frequency: freq, duration: 0.038, release: 0.032, volume: 0.024 });
       } else if (resolvedStyle === "wooden") {
-        this.playTone({ type: "sine", frequency: 720, frequencyEnd: 360, duration: 0.022, release: 0.02, volume: 0.03 });
+        this.playTone({ type: "sine", frequency: pitch(720), frequencyEnd: pitch(360), duration: 0.022, release: 0.02, volume: 0.03 });
       } else if (resolvedStyle === "mechanical") {
-        this.playTone({ type: "square", frequency: 2600, frequencyEnd: 1800, duration: 0.01, release: 0.012, volume: 0.016 });
+        this.playTone({ type: "square", frequency: pitch(2600), frequencyEnd: pitch(1800), duration: 0.01, release: 0.012, volume: 0.016 });
       } else if (resolvedStyle === "raindrop") {
-        this.playTone({ type: "sine", frequency: 1850, frequencyEnd: 620, duration: 0.035, release: 0.028, volume: 0.026 });
+        this.playTone({ type: "sine", frequency: pitch(1850), frequencyEnd: pitch(620), duration: 0.035, release: 0.028, volume: 0.026 });
       } else if (resolvedStyle === "retro8bit") {
-        this.playTone({ type: "square", frequency: 987, frequencyEnd: 1318, duration: 0.02, release: 0.018, volume: 0.018 });
+        this.playTone({ type: "square", frequency: pitch(987), frequencyEnd: pitch(1318), duration: 0.02, release: 0.018, volume: 0.018 });
       } else if (resolvedStyle === "watchgear") {
-        this.playTone({ type: "triangle", frequency: 3200, frequencyEnd: 2400, duration: 0.008, release: 0.008, volume: 0.022 });
+        this.playTone({ type: "triangle", frequency: pitch(3200), frequencyEnd: pitch(2400), duration: 0.008, release: 0.008, volume: 0.022 });
       } else if (resolvedStyle === "bubble") {
-        this.playTone({ type: "sine", frequency: 350, frequencyEnd: 920, duration: 0.045, release: 0.035, volume: 0.024 });
+        this.playTone({ type: "sine", frequency: pitch(350), frequencyEnd: pitch(920), duration: 0.045, release: 0.035, volume: 0.024 });
       } else {
-        this.playTone({ type: "triangle", frequency: 680, duration: 0.012, release: 0.012, volume: 0.02 });
+        this.playTone({ type: "triangle", frequency: pitch(680), duration: 0.012, release: 0.012, volume: 0.02 });
       }
     } catch (error) {
       console.debug("Crisp File Explorer tick sound failed", error);

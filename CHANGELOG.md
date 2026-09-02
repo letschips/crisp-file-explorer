@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.62] - 2026-09-02 (Drag Sound Style Preservation)
+
+### Fixed
+- 开启“音高滑动”后，拖动音效继续保留所选音色，不再将所有风格替换成同一种八音盒音阶。
+- 所选拖动音色仍会随文件树位置升高音高，落定确认音效保持原有行为。
+
+### Verification
+- JavaScript 语法检查与完整自动回归测试通过（82/82）。
+- ANKS 实际重载后确认不同拖动音色保持不同波形，音高滑动继续生效且无新增运行错误。
+
 ## [0.2.61] - 2026-08-31 (Empty-State Folder Label Offset)
 
 ### Fixed

@@ -568,6 +568,29 @@ test("audio creates a separate AudioContext per owner window", () => {
   assert.equal(audio.contextList.size, 2);
 });
 
+test("drag pitch scaling preserves the selected sound style", () => {
+  const { CrispAudio } = loadPluginRuntime();
+  const tones = [];
+  const audio = Object.create(CrispAudio.prototype);
+  audio.lastTickAt = -Infinity;
+  audio.currentOwnerWindow = null;
+  audio.playTone = (options) => tones.push(options);
+
+  audio.tick("wooden", 0.5, true);
+  audio.lastTickAt = -Infinity;
+  audio.tick("mechanical", 0.5, true);
+  audio.lastTickAt = -Infinity;
+  audio.tick("wooden", 0, true);
+  audio.lastTickAt = -Infinity;
+  audio.tick("wooden", 1, true);
+
+  assert.equal(tones.length, 4);
+  assert.equal(tones[0].type, "sine");
+  assert.equal(tones[1].type, "square");
+  assert.notEqual(tones[0].frequency, tones[1].frequency);
+  assert.ok(tones[2].frequency < tones[3].frequency);
+});
+
 test("stable far-away rows are not rewritten on every animation frame", () => {
   const { FileExplorerRail } = loadPluginRuntime();
   let propertyWrites = 0;
