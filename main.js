@@ -1697,6 +1697,11 @@ class FileExplorerRail {
     this.measureFrame = null;
     this.measureQueued = false;
     this.pendingReveal = false;
+    this.pendingImmediate = false;
+    this.pendingTransition = false;
+    this.transitionTimer = null;
+    this.transitionOwnerWindow = null;
+    this.transitionTargetY = undefined;
     this.tickSideMap = new Map();
     this.destroyed = false;
     this.enabled = true;
@@ -1818,10 +1823,7 @@ class FileExplorerRail {
 
   destroy() {
     this.destroyed = true;
-    if (this.transitionTimer) {
-      clearTimeout(this.transitionTimer);
-      this.transitionTimer = null;
-    }
+    this.clearColdOpenTransition();
     cancelOwnerFrame(this.container, this.frame);
     cancelOwnerFrame(this.container, this.measureFrame);
     cancelOwnerFrame(this.container, this.dragScrollFrame);
@@ -1890,6 +1892,7 @@ class FileExplorerRail {
     this.container.classList.toggle("crisp-fe-container-active", next);
 
     if (!next) {
+      this.clearColdOpenTransition();
       cancelOwnerFrame(this.container, this.frame);
       cancelOwnerFrame(this.container, this.measureFrame);
       cancelOwnerFrame(this.container, this.dragScrollFrame);
@@ -1899,6 +1902,8 @@ class FileExplorerRail {
       this.dragScrollFrame = null;
       this.measureQueued = false;
       this.pendingReveal = false;
+      this.pendingImmediate = false;
+      this.pendingTransition = false;
       this.lastFrameTime = undefined;
       this.releasePointerCapture();
       this.setDragging(false);
@@ -1918,6 +1923,22 @@ class FileExplorerRail {
       this.nearestTickIndex = -1;
       this.visualActiveIndex = -1;
     }
+  }
+
+  clearColdOpenTransition() {
+    if (this.transitionTimer) {
+      const ownerWindow = this.transitionOwnerWindow;
+      if (ownerWindow && typeof ownerWindow.clearTimeout === "function") {
+        ownerWindow.clearTimeout(this.transitionTimer);
+      } else {
+        clearTimeout(this.transitionTimer);
+      }
+    }
+    this.transitionTimer = null;
+    this.transitionOwnerWindow = null;
+    this.transitionTargetY = undefined;
+    if (this.orb && this.orb.style) this.orb.style.transition = "";
+    if (this.lineFocus && this.lineFocus.style) this.lineFocus.style.transition = "";
   }
 
   resetItem(el) {
@@ -2137,8 +2158,17 @@ class FileExplorerRail {
       Math.abs(this.displayY - nextTarget) > 1
     );
 
+    const transitionTargetChanged = this.transitionTimer && (
+      options.immediate
+      || prefersReducedMotion.matches
+      || this.isDragging
+      || Math.abs((this.transitionTargetY ?? nextTarget) - nextTarget) > 1
+    );
+    if (transitionTargetChanged) this.clearColdOpenTransition();
+
     this.targetY = nextTarget;
     if (shouldTransition) {
+      this.clearColdOpenTransition();
       const transitionStyle = "transform 220ms cubic-bezier(0.2, 0, 0, 1)";
       if (this.orb && this.orb.style) this.orb.style.transition = transitionStyle;
       if (this.lineFocus && this.lineFocus.style) this.lineFocus.style.transition = transitionStyle;
@@ -2146,12 +2176,18 @@ class FileExplorerRail {
       this.displayY = nextTarget;
       this.velocity = 0;
 
-      if (this.transitionTimer) clearTimeout(this.transitionTimer);
-      this.transitionTimer = setTimeout(() => {
+      const ownerWindow = getOwnerWindow(this.container);
+      this.transitionOwnerWindow = ownerWindow;
+      this.transitionTargetY = nextTarget;
+      const timer = setOwnerTimeout(this.container, () => {
+        if (this.transitionTimer !== timer) return;
         this.transitionTimer = null;
+        this.transitionOwnerWindow = null;
+        this.transitionTargetY = undefined;
         if (this.orb && this.orb.style) this.orb.style.transition = "";
         if (this.lineFocus && this.lineFocus.style) this.lineFocus.style.transition = "";
       }, 240);
+      this.transitionTimer = timer;
     } else if (hadOrbPosition && !options.immediate && !this.isDragging && first && last) {
       this.displayY = clamp(this.container.scrollTop + previousViewportY, first.center, last.center);
     } else if (!hadOrbPosition) {
@@ -2441,12 +2477,7 @@ class FileExplorerRail {
     event.preventDefault();
     event.stopPropagation();
 
-    if (this.transitionTimer) {
-      clearTimeout(this.transitionTimer);
-      this.transitionTimer = null;
-    }
-    if (this.orb && this.orb.style) this.orb.style.transition = "";
-    if (this.lineFocus && this.lineFocus.style) this.lineFocus.style.transition = "";
+    this.clearColdOpenTransition();
 
     // 先清理可能残留的监听器，避免重复绑定
     this.cleanupDragListeners();
@@ -2750,22 +2781,8 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
 
       summary.addEventListener("click", (evt) => {
         evt.preventDefault();
-        if (details.classList.contains("is-closing")) {
-          return;
-        }
-        if (details.open) {
-          details.classList.remove("is-open");
-          details.classList.add("is-closing");
-          window.setTimeout(() => {
-            details.open = false;
-            details.classList.remove("is-closing");
-          }, 240);
-        } else {
-          details.open = true;
-          window.requestAnimationFrame(() => {
-            details.classList.add("is-open");
-          });
-        }
+        details.open = !details.open;
+        details.classList.toggle("is-open", details.open);
       });
 
       return body;
@@ -3030,6 +3047,8 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.refreshQueued = false;
     this.refreshFrame = null;
     this.pendingRefreshReveal = false;
+    this.pendingRefreshImmediate = false;
+    this.pendingRefreshTransition = false;
     this.activeRevealFrame = null;
     this.activeRevealTimers = [];
     this.activeRevealRunId = 0;
@@ -3160,6 +3179,8 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.refreshFrame = null;
     this.refreshQueued = false;
     this.pendingRefreshReveal = false;
+    this.pendingRefreshImmediate = false;
+    this.pendingRefreshTransition = false;
     this.activeRevealRunId += 1;
     this.cancelActiveRevealFrame();
     this.clearActiveRevealTimers();

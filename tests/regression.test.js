@@ -302,6 +302,98 @@ test("spring motion starts on the first animation frame", () => {
   assert.ok(controller.displayY > 0, "the orb should move immediately instead of waiting one frame");
 });
 
+test("cold-open motion uses the file explorer owner window and clears cleanly", () => {
+  const ownerTimers = new Map();
+  let nextTimerId = 1;
+  const ownerWindow = {
+    setTimeout(callback) {
+      const id = nextTimerId++;
+      ownerTimers.set(id, callback);
+      return id;
+    },
+    clearTimeout(id) {
+      ownerTimers.delete(id);
+    },
+  };
+  const { FileExplorerRail } = loadPluginRuntime();
+  const activeElement = {
+    classList: fakeClassList("nav-file-title", "crisp-fe-item", "crisp-fe-file", "crisp-fe-active"),
+    closest() { return null; },
+    getAttribute(name) { return name === "data-path" ? "notes/active.md" : null; },
+    getBoundingClientRect() { return { top: 100, height: 20 }; },
+    style: { removeProperty() {} },
+  };
+  const controller = {
+    destroyed: false,
+    container: {
+      ownerDocument: { defaultView: ownerWindow },
+      isConnected: true,
+      scrollTop: 0,
+      scrollHeight: 400,
+      clientHeight: 300,
+      querySelectorAll() { return [activeElement]; },
+      getBoundingClientRect() { return { top: 0 }; },
+      style: { setProperty() {} },
+    },
+    plugin: {
+      settings: { orbStyle: "default", includeFolders: true },
+      app: { workspace: { getActiveFile: () => ({ path: "notes/active.md" }) } },
+      getTodayPathSet: () => new Set(),
+      getFrequentPathSet: () => new Set(),
+      getPinnedPathSet: () => new Set(),
+    },
+    orb: { dataset: { orbStyle: "default" }, style: {} },
+    lineFocus: { style: {} },
+    items: [{
+      el: activeElement,
+      center: 30,
+      path: "notes/active.md",
+      type: "file",
+      active: true,
+      today: false,
+      magnet: false,
+      pinned: false,
+      renderedX: 34,
+    }],
+    tickMarks: [],
+    hasOrbPosition: true,
+    displayY: 30,
+    targetY: 30,
+    velocity: 4,
+    isDragging: false,
+    dynamicItemRange: [0, 0],
+    dynamicTickRange: [0, -1],
+    nearestTickIndex: -1,
+    transitionTimer: null,
+    transitionOwnerWindow: null,
+    transitionTargetY: undefined,
+    clearColdOpenTransition: FileExplorerRail.prototype.clearColdOpenTransition,
+    syncOwnerContext() {},
+    isVisible: () => true,
+    setEnabled() {},
+    syncEmptyState() {},
+    updateRailLineBounds() {},
+    syncTickElements() {},
+    syncDragPositionAfterMeasure: () => false,
+    ensureItemVisible() {},
+    render() {},
+    requestFrame() {},
+  };
+
+  FileExplorerRail.prototype.refresh.call(controller, { transition: true });
+
+  assert.equal(controller.displayY, 110);
+  assert.equal(controller.velocity, 0);
+  assert.equal(ownerTimers.size, 1);
+  assert.match(controller.orb.style.transition, /^transform 220ms/);
+  assert.equal(controller.orb.style.transition, controller.lineFocus.style.transition);
+
+  [...ownerTimers.values()][0]();
+  assert.equal(controller.transitionTimer, null);
+  assert.equal(controller.orb.style.transition, "");
+  assert.equal(controller.lineFocus.style.transition, "");
+});
+
 test("successful active reveal cancels retries and avoids a second reveal scroll", () => {
   const { PluginClass, clearedTimers } = loadPluginRuntime();
   const plugin = Object.create(PluginClass.prototype);
@@ -1085,12 +1177,23 @@ test("normal scrolling updates the rotation baseline without remeasuring the tre
 test("hiding the file explorer clears transient row translations", () => {
   const { FileExplorerRail } = loadPluginRuntime();
   const removed = [];
+  let clearedTransitionTimer = 0;
   const controller = {
     enabled: true,
     frame: null,
     measureFrame: 42,
     measureQueued: true,
     pendingReveal: true,
+    pendingImmediate: true,
+    pendingTransition: true,
+    transitionTimer: 91,
+    transitionOwnerWindow: {
+      clearTimeout(id) {
+        clearedTransitionTimer = id;
+      },
+    },
+    transitionTargetY: 140,
+    clearColdOpenTransition: FileExplorerRail.prototype.clearColdOpenTransition,
     dragScrollFrame: null,
     items: Array.from({ length: 4 }, (_, index) => ({
       renderedX: index > 0 && index < 3 ? 12 : 0,
@@ -1100,7 +1203,8 @@ test("hiding the file explorer clears transient row translations", () => {
     dynamicTickRange: [0, -1],
     rail: {},
     container: { classList: fakeClassList() },
-    orb: { classList: fakeClassList() },
+    orb: { classList: fakeClassList(), style: { transition: "transform 220ms ease" } },
+    lineFocus: { style: { transition: "transform 220ms ease" } },
     tickSideMap: new Map(),
     autoExpandedFolderPaths: new Set(),
     clearAutoExpandTimer() {},
@@ -1114,6 +1218,13 @@ test("hiding the file explorer clears transient row translations", () => {
   assert.deepEqual(removed, [[1, "translate"], [2, "translate"]]);
   assert.equal(controller.measureQueued, false);
   assert.equal(controller.pendingReveal, false);
+  assert.equal(controller.pendingImmediate, false);
+  assert.equal(controller.pendingTransition, false);
+  assert.equal(clearedTransitionTimer, 91);
+  assert.equal(controller.transitionTimer, null);
+  assert.equal(controller.transitionTargetY, undefined);
+  assert.equal(controller.orb.style.transition, "");
+  assert.equal(controller.lineFocus.style.transition, "");
 });
 
 test("dragging state is shared by the orb and file-tree container", () => {
@@ -1211,6 +1322,17 @@ test("reduced motion also disables settings accordion transitions", () => {
   assert.match(reducedMotionBlocks, /\.crisp-fe-setting-card__content-wrapper/);
   assert.match(reducedMotionBlocks, /\.crisp-fe-setting-card__body/);
   assert.match(reducedMotionBlocks, /transition:\s*none !important/);
+});
+
+test("settings accordion avoids layout-property animation and delayed closing", () => {
+  const css = readStyles();
+  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const createGroup = source.match(/const createGroup = \(title, description, open = false\) => \{([\s\S]*?)\n\s*const licenseGroup/);
+
+  assert.ok(createGroup);
+  assert.doesNotMatch(css, /transition:[^;]*(?:grid-template-rows|padding)/);
+  assert.doesNotMatch(createGroup[1], /window\.(?:setTimeout|requestAnimationFrame)/);
+  assert.match(createGroup[1], /details\.open = !details\.open/);
 });
 
 test("frequent magnets avoid persistent paint-heavy glow", () => {
@@ -1567,6 +1689,7 @@ test("controller animation and drag listeners use the file explorer owner window
     isDragging: false,
     items: [{ center: 100 }],
     cleanupDragListeners() {},
+    clearColdOpenTransition: FileExplorerRail.prototype.clearColdOpenTransition,
     setDragging(active) { this.isDragging = active; },
     orb: { setPointerCapture() {} },
     updateDrag() {},
@@ -2172,6 +2295,7 @@ test("destroy removes transient drag state from the file-tree container", () => 
     },
     releasePointerCapture() {},
     cleanupDragListeners() {},
+    clearColdOpenTransition: FileExplorerRail.prototype.clearColdOpenTransition,
     rail: { remove() {} },
   };
 
