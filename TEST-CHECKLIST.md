@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.2.65 测试清单
+# Crisp File Explorer v0.2.66 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,7 +6,7 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.2.65`。
+- [ ] `manifest.json` 版本为 `0.2.66`。
 - [ ] `assets/` 中不存在未引用的旧素材。
 - [ ] `main.js`、`styles.css` 和资源文件不包含本机绝对路径。
 - [ ] 新版授权码激活成功，旧版授权码被拒绝。
@@ -69,6 +69,6 @@
 ## 发布检查
 
 - [ ] 待主仓库验收后，再同步其他运行仓库；各仓库分别保留自己的 `data.json`。
-- [ ] 各目标仓库均重载到 v0.2.65。
+- [ ] 各目标仓库均重载到 v0.2.66。
 - [ ] 分享 ZIP 仅包含 `main.js`、`styles.css` 和 `manifest.json`；Orb 已内联，不包含源 `assets/`。
 - [ ] 分享 ZIP 不包含 `data.json`、测试、说明文档、本机路径或私密配置。

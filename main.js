@@ -90,7 +90,7 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explo
       const deviceId = app?.appId || (app?.vault?.getName ? "vault-" + encodeURIComponent(app.vault.getName()) : "device-default");
       const res = await Promise.race([
         requestUrl({
-          url: "https://crisp-license.helloherve-xsn.workers.dev/api/verify-device",
+          url: "https://license.letschips.xyz/api/verify-device",
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
