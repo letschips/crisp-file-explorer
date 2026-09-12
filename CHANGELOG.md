@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.68] - 2026-09-12
+
+### Stability
+- 强化授权验证逻辑与自动化契约测试。
+
 ## [0.2.63] - 2026-09-02 (Cold Open Smooth Transition & Fast Startup)
 
 ### Fixed
