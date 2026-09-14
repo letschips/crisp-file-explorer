@@ -22,6 +22,8 @@ const ASSET_STYLES = {
   "character6.svg": "character6",
   "character7.svg": "character7",
   "character8.svg": "character8",
+  "character9.svg": "character9",
+  "character10.svg": "character10",
   "devil.svg": "devil",
   "dizzy.svg": "dizzy",
   "face-mask.svg": "facemask",

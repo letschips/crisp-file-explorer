@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.70] - 2026-09-14
+
+### Added
+- 新增 Character 9、Character 10 两款小球。
+
 ## [0.2.69] - 2026-09-14
 
 ### Added
