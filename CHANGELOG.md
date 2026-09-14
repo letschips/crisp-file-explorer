@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.69] - 2026-09-14
+
+### Added
+- 新增 Character 6、Character 7、Character 8 三款小球。
+
 ## [0.2.68] - 2026-09-12
 
 ### Stability

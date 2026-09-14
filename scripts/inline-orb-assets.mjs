@@ -19,6 +19,9 @@ const ASSET_STYLES = {
   "character3.png": "character3",
   "character4.svg": "character4",
   "character5.svg": "character5",
+  "character6.svg": "character6",
+  "character7.svg": "character7",
+  "character8.svg": "character8",
   "devil.svg": "devil",
   "dizzy.svg": "dizzy",
   "face-mask.svg": "facemask",
@@ -97,8 +100,9 @@ for (const [filename, style] of Object.entries(ASSET_STYLES)) {
 let main = readFileSync(mainPath, "utf8");
 
 // 1. Replace the file-backed IMAGE_ORB_ASSETS with inline PNG data URLs.
-// Run on a clean main.js (restore from git first if it was already inlined).
-const imageBlock = blockRange(main, "const IMAGE_ORB_ASSETS = {");
+// Accept both legacy file-backed builds and the current inline runtime.
+const imageBlock = blockRange(main, "const IMAGE_ORB_ASSETS = {")
+  ?? blockRange(main, "const ORB_IMAGE_DATA_URLS = {");
 if (!imageBlock) {
   throw new Error("image orb block not found");
 }
@@ -112,10 +116,15 @@ const svgBlock = blockRange(main, "const ORB_SVGS = {");
 if (!svgBlock) {
   throw new Error("ORB_SVGS block not found");
 }
-main =
-  main.slice(0, svgBlock.end - 2) +
-  `\n${svgEntries.join("\n")}\n` +
-  main.slice(svgBlock.end - 2);
+// Remove previously generated entries while preserving built-in, non-file artwork.
+let svgBody = main.slice(svgBlock.start, svgBlock.end - 2);
+for (const [filename, style] of Object.entries(ASSET_STYLES)) {
+  if (!filename.endsWith(".svg")) continue;
+  const entry = new RegExp("\\n[ \t]*" + style + ":\\s*`(?:\\\\[\\s\\S]|[^`])*`\\s*,?", "g");
+  svgBody = svgBody.replace(entry, "");
+}
+main = main.slice(0, svgBlock.start) + svgBody.trimEnd()
+  + `\n${svgEntries.join("\n")}\n};` + main.slice(svgBlock.end);
 
 // 3. Point the orb renderer at the inline data URLs.
 const expectedReplacements = [
@@ -133,7 +142,7 @@ for (const [from, to] of expectedReplacements) {
   const fromCount = main.split(from).length - 1;
   if (fromCount === 1) {
     main = main.split(from).join(to);
-  } else {
+  } else if (fromCount !== 0 || main.split(to).length - 1 !== 1) {
     throw new Error(`expected exactly 1 occurrence of "${from}", found ${fromCount}`);
   }
 }

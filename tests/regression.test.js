@@ -1913,10 +1913,13 @@ test("all orb artwork is bundled inline without machine-specific paths", () => {
     spiderman: { asset: "assets/spider-man.svg", label: "Spider-Man" },
     character4: { asset: "assets/character4.svg", label: "Character 4" },
     character5: { asset: "assets/character5.svg", label: "Character 5" },
+    character6: { asset: "assets/character6.svg", label: "Character 6 (Labubu Chucky)" },
+    character7: { asset: "assets/character7.svg", label: "Character 7 (Hello Kitty)" },
+    character8: { asset: "assets/character8.svg", label: "Character 8 (Stitch)" },
   })) {
     assert.ok(fs.existsSync(path.join(__dirname, "..", asset)), `${asset} should exist`);
     assert.match(inlineOrbBlock[1], new RegExp(`^\\s*${style}:`, "m"));
-    assert.match(source, new RegExp(`addOption\\("${style}",\\s*"${label}"\\)`));
+    assert.match(source, new RegExp(`addOption\\("${style}",\\s*"${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"\\)`));
   }
   assert.match(dataUrlBlock[1], /character1:\s*"data:image\/png;base64,/);
   assert.match(dataUrlBlock[1], /character2:\s*"data:image\/png;base64,/);
@@ -1952,7 +1955,7 @@ test("runtime ships inline orbs with no separate asset dependency", () => {
 
 test("character PNG data URLs stay upright while circular SVGs rotate", () => {
   const { ORB_IMAGE_DATA_URLS, RANDOM_DAILY_ORB_STYLES, STATIC_ORB_STYLES } = loadPluginRuntime();
-  const staticStyles = ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5"];
+  const staticStyles = ["snorlax", "pikachu", "snorlaxface", "batman", "superman", "spiderman", "character4", "character5", "character6", "character7", "character8"];
   const rotatingStyles = ["soccer", "basketball", "tennis", "shutup", "pokeball", "bracelet", "angry", "squint", "facemask", "pokerface", "captainshield", "dizzy", "vinyl"];
 
   assert.match(ORB_IMAGE_DATA_URLS.character1, /^data:image\/png;base64,/);
