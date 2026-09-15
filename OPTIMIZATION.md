@@ -1,6 +1,6 @@
 # Crisp File Explorer 维护说明
 
-当前版本：v0.2.70
+当前版本：v0.4.0
 
 作者：letschips（小红书博主）
 
@@ -132,3 +132,15 @@ node --test tests/regression.test.js
 - `CHANGELOG.md`：版本变更记录。
 
 灵感来源：[BubblePtr/ZenBlog CrispToc](https://github.com/BubblePtr/ZenBlog/blob/main/src/shared/components/navigation/CrispToc.client.tsx)
+
+## v0.4.0 双栏核心操作
+
+- 保留原生单栏和独立双栏、Crisp 导轨、透明背景、渐隐分割线与原生工具栏圆点。
+- 右栏准星定位当前文件；浏览选项可启用/关闭自动跟随，普通刷新不改变手动浏览目录。
+- 双栏支持右键基础文件操作并触发 Obsidian file-menu 扩展；新建对话框在当前目录创建笔记/文件夹，校验名称及同名冲突。
+- 浏览选项支持子目录 Markdown 汇总、名称/修改时间排序。汇总显示相对目录用于区分同名文件。
+- 超过 200 项的文件列表按固定行高窗口渲染，无第三方虚拟列表依赖。
+- 单文件拖到文件夹通过 fileManager.renameFile 移动，拒绝同名覆盖；拖出沿用 Obsidian 原生文件拖动描述对象。
+- Tab 从树到列表再到编辑器，Shift+Tab 或左箭头从列表回树；Backspace 返回上级，F2 调用原生重命名弹窗。
+- 自动布局在窄于 360px 时切为上下，达到 400px 时恢复左右，也可手动固定方向；分隔线随方向切换并保留渐隐效果。
+- 范围：单文件移动，不包括批量多选、文件夹移动或外部文件导入。保留轻量和零新增依赖。

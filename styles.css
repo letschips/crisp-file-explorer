@@ -591,6 +591,242 @@ body.crisp-file-explorer-enabled.is-mobile .crisp-fe-rail {
 
 }
 
+/* Lightweight two-pane browser. Inherit the host's translucency; no new glass layer. */
+body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"].crisp-fe-browser-open > :is(.nav-header, .nav-files-container) {
+  display: none !important;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser {
+  --crisp-fe-folder-width: 200px;
+  --crisp-fe-folder-height: 200px;
+  --crisp-fe-folder-share: var(--crisp-fe-folder-width);
+  --crisp-fe-browser-hover: color-mix(in srgb, var(--text-normal) 5%, transparent);
+  --crisp-fe-browser-selected: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+  display: grid;
+  grid-template-columns: minmax(100px, min(var(--crisp-fe-folder-width, 200px), calc(100% - 100px))) 1px minmax(0, 1fr);
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text-normal);
+  background: transparent !important;
+  font-size: var(--nav-item-size, 14px);
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser [hidden],
+body.crisp-file-explorer-enabled .crisp-fe-browser[hidden] { display: none !important; }
+body.crisp-file-explorer-enabled .crisp-fe-browser :is(.crisp-fe-browser-navigation, .crisp-fe-browser-directory) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser .crisp-fe-browser-header {
+  display: flex;
+  align-items: center;
+  flex: 0 0 42px;
+  gap: 3px;
+  padding: 4px 8px;
+  min-width: 0;
+  background: transparent !important;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-heading {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+body.crisp-file-explorer-enabled :is(.crisp-fe-browser-icon, .crisp-fe-browser-entry, .crisp-fe-folder-row) {
+  appearance: none;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-icon {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  border-radius: 5px;
+  color: var(--text-muted);
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-icon:disabled { opacity: .28; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-icon:hover:not(:disabled) { background: var(--background-modifier-hover); }
+body.crisp-file-explorer-enabled .crisp-fe-browser svg { width: 15px; height: 15px; stroke-width: 1.65; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-separator {
+  position: relative;
+  --crisp-fe-divider-color: color-mix(in srgb, var(--interactive-accent) 38%, transparent);
+  background: linear-gradient(to bottom, transparent, var(--crisp-fe-divider-color), transparent);
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+  margin: 8px 0;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-separator::after {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-separator:hover,
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-resizing .crisp-fe-browser-separator {
+  --crisp-fe-divider-color: color-mix(in srgb, var(--interactive-accent) 65%, transparent);
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-resizing { user-select: none; cursor: col-resize; }
+body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"] .nav-files-container.crisp-fe-folder-tree {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  padding: 4px 8px 16px 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-clip-margin: 0;
+  background: transparent !important;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-list {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  padding: 4px 8px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: transparent !important;
+}
+/* Keep scrolling and virtual list updates without a visible scrollbar. */
+body.crisp-file-explorer-enabled .crisp-fe-browser-list { scrollbar-width: none; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-list::-webkit-scrollbar { display: none; width: 0; height: 0; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-list-item { margin: 0 0 2px; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 9px;
+  text-align: left;
+  font-size: inherit;
+  font-weight: 400;
+  border-radius: 6px;
+  background: transparent !important;
+}
+body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"] .nav-files-container.crisp-fe-folder-tree .crisp-fe-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  margin: 0 0 2px !important;
+  padding: 0 6px 0 calc(3px + var(--folder-depth) * 12px) !important;
+  border-radius: 6px;
+  font-size: inherit;
+  font-weight: 400;
+  text-align: left;
+  background: transparent;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry .crisp-fe-browser-name { flex: 1; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry-icon {
+  display: inline-flex;
+  flex: 0 0 15px;
+  align-items: center;
+  color: var(--text-muted);
+}
+body.crisp-file-explorer-enabled :is(.crisp-fe-folder-chevron, .crisp-fe-browser-entry-chevron) {
+  display: inline-flex;
+  flex: 0 0 12px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+body.crisp-file-explorer-enabled .crisp-fe-folder-chevron { height: 100%; }
+body.crisp-file-explorer-enabled .crisp-fe-folder-chevron.is-empty { visibility: hidden; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry:hover { background: var(--crisp-fe-browser-hover) !important; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry.is-active { background: var(--crisp-fe-browser-selected) !important; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry.is-active .crisp-fe-browser-entry-icon { color: var(--interactive-accent); }
+body.crisp-file-explorer-enabled .crisp-fe-browser-empty {
+  position: absolute;
+  top: 100px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-directory { position: relative; }
+body.crisp-file-explorer-enabled .crisp-fe-browser :is(button, [tabindex]):focus-visible {
+  outline: 1px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+/* Core two-pane interactions; keep theme surfaces transparent. */
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-compact-directory .crisp-fe-browser-directory .crisp-fe-browser-header {
+  flex-wrap: wrap;
+  flex-basis: 68px;
+  align-content: center;
+  row-gap: 2px;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-compact-directory .crisp-fe-browser-directory .crisp-fe-browser-heading {
+  flex: 1 1 calc(100% - 32px);
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-compact-directory .crisp-fe-browser-directory .crisp-fe-browser-header > button:nth-of-type(2) { margin-left: auto; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-path {
+  color: var(--text-faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-flat-view .crisp-fe-browser-entry { height: 50px; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-viewport { min-width: 0; }
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry { flex-shrink: 0; }
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-vertical {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(90px, min(var(--crisp-fe-folder-height, 200px), calc(100% - 100px))) 1px minmax(100px, 1fr);
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-vertical .crisp-fe-browser-separator {
+  margin: 0 8px;
+  cursor: row-resize;
+  background: linear-gradient(to right, transparent, var(--crisp-fe-divider-color), transparent);
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-vertical .crisp-fe-browser-separator::after { inset: -4px 0; }
+body.crisp-file-explorer-enabled .crisp-fe-browser.is-vertical.is-resizing { cursor: row-resize; }
+body.crisp-file-explorer-enabled .crisp-fe-browser .crisp-fe-drop-target {
+  outline: 1px solid var(--interactive-accent) !important;
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent) !important;
+}
+body.crisp-file-explorer-enabled .crisp-fe-browser-entry[draggable="true"] { cursor: default; }
+body.crisp-file-explorer-enabled .crisp-fe-name-input { width: 100%; }
+body.crisp-file-explorer-enabled .crisp-fe-name-error { color: var(--text-error); font-size: var(--font-ui-small); min-height: 24px; margin-top: 8px; }
+
 /* --------------------------------------------------------------------------
  * Settings Collapsible Card Groups (Apple Spring Accordion)
  * -------------------------------------------------------------------------- */
@@ -749,3 +985,7 @@ body.crisp-file-explorer-enabled.is-mobile .crisp-fe-rail {
     transition: none !important;
   }
 }
+
+/* Hide the folder pane scrollbar while retaining scroll and rail interaction. */
+body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"] .nav-files-container.crisp-fe-folder-tree { scrollbar-width: none; }
+body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"] .nav-files-container.crisp-fe-folder-tree::-webkit-scrollbar { display: none; width: 0; height: 0; }

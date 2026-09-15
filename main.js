@@ -13,7 +13,7 @@
   product. Keep this attribution visible in modified or derived versions.
 */
 
-const { Plugin, PluginSettingTab, Setting, Notice, normalizePath, requestUrl } = require("obsidian");
+const { Plugin, PluginSettingTab, Setting, Notice, Menu, Modal, setIcon, addIcon = (() => {}), normalizePath, requestUrl } = require("obsidian");
 
 const CRISP_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAiz41HIDpD59SH3DjKnovUO+EEhTJXjvmiug/ev9t4ZQ=
@@ -142,6 +142,14 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explo
 }
 
 const DEFAULT_SETTINGS = {
+  dualPaneEnabled: false,
+  dualPaneFolderWidth: 200,
+  dualPaneFolderHeight: 200,
+  dualPaneRatio: 0.43,
+  dualPaneSort: "name",
+  dualPaneFollowActive: true,
+  dualPaneDescendants: false,
+  dualPaneLayout: "auto",
   includeFolders: true,
   openOnDragRelease: true,
   soundEnabled: false,
@@ -2466,7 +2474,9 @@ class FileExplorerRail {
     ).filter((el) => !el.closest(".crisp-fe-rail"));
 
     const activeFile = this.plugin.app.workspace.getActiveFile();
-    const activePath = activeFile ? activeFile.path : null;
+    const navigationPath = this.container.dataset?.crispFolderPath;
+    const folderBrowser = navigationPath !== undefined;
+    const activePath = folderBrowser ? navigationPath : activeFile ? activeFile.path : null;
     const containerRect = this.container.getBoundingClientRect();
     const todayPaths = this.plugin.getTodayPathSet();
     const frequentPaths = this.plugin.getFrequentPathSet();
@@ -2475,7 +2485,7 @@ class FileExplorerRail {
     const candidates = [];
     for (const el of titles) {
       const isFolder = el.classList.contains("nav-folder-title");
-      if (isFolder && !this.plugin.settings.includeFolders) {
+      if (isFolder && !folderBrowser && !this.plugin.settings.includeFolders) {
         this.resetItem(el);
         continue;
       }
@@ -2492,7 +2502,7 @@ class FileExplorerRail {
 
       const path = el.getAttribute("data-path");
       const type = isFolder ? "folder" : "file";
-      const active = type === "file" && path && path === activePath;
+      const active = (folderBrowser || type === "file") && path && path === activePath;
       const today = type === "file" && path && todayPaths.has(path);
       const pinned = type === "file" && path && pinnedPaths.has(path);
       const magnet = type === "file" && path && (pinned || frequentPaths.has(path));
@@ -3020,7 +3030,7 @@ class FileExplorerRail {
       this.plugin.audio.release(resolveSoundStyle(this.plugin.settings.soundStyle, this.orb.dataset.orbStyle), this.ownerWindow);
     }
     if (item && this.plugin.settings.openOnDragRelease) {
-      const skipAutoExpandedFolder = item.type === "folder" && this.autoExpandedFolderPaths.has(item.path);
+      const skipAutoExpandedFolder = this.container.dataset?.crispFolderPath === undefined && item.type === "folder" && this.autoExpandedFolderPaths.has(item.path);
       if (!skipAutoExpandedFolder) {
         this.plugin.lockInteraction();
         dispatchMouseSequence(item.el);
@@ -3472,6 +3482,13 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl)
+      .setName("轻量双栏浏览")
+      .setDesc("左侧浏览文件夹，右侧显示当前目录。也可用文件浏览器顶栏按钮切换。")
+      .addToggle(toggle => toggle
+        .setValue(Boolean(this.plugin.settings.dualPaneEnabled))
+        .onChange(value => this.plugin.setDualPaneEnabled(value)));
+
     renderAboutCard(
       containerEl,
       "Crisp File Explorer",
@@ -3480,10 +3497,930 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
   }
 }
 
+// Lightweight folder navigation. The native virtual tree stays mounted and untouched.
+function crispFolderPath(path) {
+  const index = (path || "").lastIndexOf("/");
+  return index < 0 ? "" : path.slice(0, index);
+}
+
+function crispRewritePath(path, oldPath, newPath) {
+  if (path !== oldPath && !path.startsWith(`${oldPath}/`)) return path;
+  return newPath === null ? crispFolderPath(oldPath) : newPath + path.slice(oldPath.length);
+}
+
+function crispDirectoryEntries(folder, sort = "name") {
+  return Array.from(folder?.children || []).sort((a, b) => {
+    const folderOrder = Number(Array.isArray(b.children)) - Number(Array.isArray(a.children));
+    if (folderOrder) return folderOrder;
+    if (sort === "modified" && !Array.isArray(a.children)) {
+      const delta = (b.stat?.mtime || 0) - (a.stat?.mtime || 0);
+      if (delta) return delta;
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+}
+
+const DUAL_PANE_ICON_ID = "crisp-fe-dual-pane";
+const DUAL_PANE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.25 2.75h-14.5a2 2 0 0 0-2 2v14.5a2 2 0 0 0 2 2h14.5a2 2 0 0 0 2-2v-14.5a2 2 0 0 0-2-2M12 2.75v18.5M12 8.5h9.25M12 15.5H2.75"/></svg>`;
+
+const SINGLE_PANE_ICON_ID = "crisp-fe-single-pane";
+const SINGLE_PANE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.25C12.4142 1.25 12.75 1.58579 12.75 2V6C12.75 6.41421 12.4142 6.75 12 6.75C11.5858 6.75 11.25 6.41421 11.25 6V2C11.25 1.58579 11.5858 1.25 12 1.25ZM5.54956 3.61372C5.56578 3.62531 5.58207 3.63694 5.59841 3.64861L7.20388 4.79538C7.4911 5.00051 7.74578 5.18241 7.94651 5.35512C8.16426 5.54247 8.35817 5.75126 8.50063 6.02808C8.64309 6.30491 8.70028 6.58406 8.72617 6.87014C8.75004 7.13387 8.75002 7.44684 8.75001 7.7998V16.2002C8.75002 16.5532 8.75004 16.8661 8.72617 17.1299C8.70027 17.4159 8.64309 17.6951 8.50063 17.9719C8.35817 18.2487 8.16426 18.4575 7.94651 18.6449C7.74579 18.8176 7.49113 18.9995 7.20392 19.2046L5.54956 20.3863C4.89882 20.8512 4.3423 21.2487 3.87881 21.4865C3.40614 21.729 2.80484 21.9245 2.19924 21.6129C1.59364 21.3012 1.40321 20.6983 1.32581 20.1727C1.24992 19.6573 1.24996 18.9734 1.25 18.1736L1.25 5.88638C1.25 5.8663 1.25 5.84629 1.25 5.82635C1.24996 5.02661 1.24992 4.34268 1.32581 3.82731C1.40321 3.30172 1.59364 2.6988 2.19924 2.38715C2.80484 2.07549 3.40614 2.27097 3.87881 2.51348C4.3423 2.75128 4.89882 3.14884 5.54956 3.61372ZM2.85693 3.72867C2.85649 3.72801 2.86043 3.72687 2.87005 3.72722C2.86218 3.7295 2.85737 3.72933 2.85693 3.72867ZM2.88991 3.72926C2.93375 3.73599 3.02598 3.76183 3.19408 3.84808C3.54719 4.02924 4.01324 4.3597 4.72655 4.86921L6.30779 5.99867C6.62652 6.22633 6.82504 6.369 6.96817 6.49215C7.09992 6.60551 7.14309 6.66823 7.16688 6.71446C7.19067 6.76068 7.21661 6.83227 7.23228 7.00536C7.2493 7.19342 7.25 7.43789 7.25 7.82957V16.1704C7.25 16.5621 7.2493 16.8066 7.23228 16.9946C7.21661 17.1677 7.19067 17.2393 7.16688 17.2855C7.14309 17.3318 7.09992 17.3945 6.96817 17.5078C6.82504 17.631 6.62652 17.7737 6.30779 18.0013L4.72655 19.1308C4.01324 19.6403 3.54719 19.9708 3.19408 20.1519C3.02598 20.2382 2.93375 20.264 2.88991 20.2707C2.8699 20.2312 2.83733 20.1411 2.8098 19.9542C2.75199 19.5615 2.75 18.9902 2.75 18.1136V5.88638C2.75 5.00979 2.75199 4.43847 2.8098 4.04584C2.83733 3.85891 2.8699 3.76884 2.88991 3.72926ZM2.85693 20.2713C2.85737 20.2707 2.86218 20.2705 2.87005 20.2728C2.86043 20.2731 2.85649 20.272 2.85693 20.2713ZM2.8998 20.2881C2.90623 20.2932 2.90888 20.2972 2.9086 20.2979C2.90832 20.2987 2.90511 20.2961 2.8998 20.2881ZM2.8998 3.71191C2.90511 3.70388 2.90832 3.70134 2.9086 3.70208C2.90888 3.70281 2.90623 3.70683 2.8998 3.71191ZM20.8059 3.84808C20.4528 4.02924 19.9868 4.3597 19.2735 4.86921L17.6922 5.99867C17.3735 6.22633 17.175 6.369 17.0318 6.49215C16.9001 6.60551 16.8569 6.66823 16.8331 6.71446C16.8093 6.76068 16.7834 6.83227 16.7677 7.00536C16.7507 7.19342 16.75 7.43789 16.75 7.82957V16.1704C16.75 16.5621 16.7507 16.8066 16.7677 16.9946C16.7834 17.1677 16.8093 17.2393 16.8331 17.2855C16.8569 17.3318 16.9001 17.3945 16.9001 17.5078C17.175 17.631 17.3735 17.7737 17.6922 18.0013L19.2735 19.1308C19.9868 19.6403 20.4528 19.9708 20.8059 20.1519C20.974 20.2382 21.0663 20.264 21.1101 20.2707C21.1301 20.2312 21.1627 20.1411 21.1902 19.9542C21.248 19.5615 21.25 18.9902 21.25 18.1136V5.88638C21.25 5.00979 21.248 4.43847 21.1902 4.04584C21.1627 3.85892 21.1301 3.76885 21.1101 3.72926C21.0663 3.73599 20.974 3.76183 20.8059 3.84808ZM21.1431 3.72867C21.1426 3.72933 21.1378 3.7295 21.13 3.72722C21.1396 3.72687 21.1435 3.72801 21.1431 3.72867ZM21.1002 3.71191C21.0938 3.70683 21.0911 3.70281 21.0914 3.70208C21.0917 3.70134 21.0949 3.70388 21.1002 3.71191ZM21.0914 20.2979C21.0911 20.2972 21.0938 20.2932 21.1002 20.2881C21.0949 20.2961 21.0917 20.2987 21.0914 20.2979ZM21.13 20.2728C21.1378 20.2705 21.1426 20.2707 21.1431 20.2713C21.1435 20.272 21.1396 20.2731 21.13 20.2728ZM20.1212 2.51348C20.5939 2.27097 21.1952 2.07549 21.8008 2.38715C22.4064 2.6988 22.5968 3.30172 22.6742 3.82731C22.7501 4.34268 22.7501 5.02661 22.75 5.82634V18.1737C22.7501 18.9734 22.7501 19.6573 22.6742 20.1727C22.5968 20.6983 22.4064 21.3012 21.8008 21.6129C21.1952 21.9245 20.5939 21.729 20.1212 21.4865C19.6577 21.2487 19.1012 20.8512 18.4505 20.3863L16.7961 19.2046C16.5089 18.9995 16.2542 18.8176 16.0535 18.6449C15.8358 18.4575 15.6418 18.2487 15.4994 17.9719C15.3569 17.6951 15.2997 17.4159 15.2738 17.1299C15.25 16.8661 15.25 16.5532 15.25 16.2002V7.79978C15.25 7.44683 15.25 7.13387 15.2738 6.87014C15.2997 6.58406 15.3569 6.30491 15.4994 6.02808C15.6418 5.75126 15.8358 5.54247 16.0535 5.35512C16.2542 5.18241 16.5089 5.00051 16.7961 4.79538L18.4504 3.61373C19.1012 3.14885 19.6577 2.75128 20.1212 2.51348ZM12 9.25C12.4142 9.25 12.75 9.58579 12.75 10V14C12.75 14.4142 12.4142 14.75 12 14.75C11.5858 14.75 11.25 14.4142 11.25 14V10C11.25 9.58579 11.5858 9.25 12 9.25ZM12 17.25C12.4142 17.25 12.75 17.5858 12.75 18V22C12.75 22.4142 12.4142 22.75 12 22.75C11.5858 22.75 11.25 22.4142 11.25 22V18C11.25 17.5858 11.5858 17.25 12 17.25Z" fill="currentColor"></path></svg>`;
+
+function crispRegisterIcons() {
+  try {
+    addIcon(DUAL_PANE_ICON_ID, DUAL_PANE_ICON_SVG);
+    addIcon(SINGLE_PANE_ICON_ID, SINGLE_PANE_ICON_SVG);
+  } catch (e) {}
+}
+
+function crispPaneRatio(value) {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) ? Math.min(0.65, Math.max(0.3, ratio)) : 0.43;
+}
+
+function crispPaneFolderWidth(value, totalWidth) {
+  const width = Number(value);
+  if (!Number.isFinite(width)) return 200;
+  const max = (totalWidth && totalWidth > 200) ? Math.max(100, totalWidth - 100) : 500;
+  return Math.min(max, Math.max(100, Math.round(width)));
+}
+
+function crispPaneFolderHeight(value, totalHeight) {
+  const height = Number(value);
+  if (!Number.isFinite(height)) return 200;
+  const max = (totalHeight && totalHeight > 180) ? Math.max(90, totalHeight - 90) : 450;
+  return Math.min(max, Math.max(90, Math.round(height)));
+}
+
+function crispCollectEntries(folder, sort, descendants) {
+  if (!descendants) return crispDirectoryEntries(folder, sort);
+  const files = [];
+  const pending = [folder];
+  while (pending.length) {
+    const current = pending.pop();
+    for (const child of current?.children || []) {
+      if (Array.isArray(child.children)) pending.push(child);
+      else if (child.extension === "md" || child.extension === "canvas") files.push(child);
+    }
+  }
+  return crispDirectoryEntries({ children: files }, sort);
+}
+
+function crispNewEntryPath(folderPath, name, note) {
+  let base = String(name || "").trim();
+  if (!base || base === "." || base === ".." || /[\\/:*?"<>|\x00-\x1f]/.test(base) || /[. ]$/.test(base)) {
+    throw new Error("请输入有效名称，不要包含斜杠或特殊路径字符");
+  }
+  if (note && !/\.md$/i.test(base)) base += ".md";
+  return folderPath ? `${folderPath}/${base}` : base;
+}
+
+function crispListWindow(count, scroll, height, rowHeight) {
+  if (count <= 200) return { start: 0, end: count };
+  const start = Math.min(Math.max(0, Math.floor(scroll / rowHeight) - 6), Math.max(0, count - 1));
+  return { start, end: Math.min(count, start + Math.ceil(Math.max(height, rowHeight) / rowHeight) + 14) };
+}
+
+function crispPaneLayout(mode, width, previous) {
+  if (mode === "vertical" || mode === "horizontal") return mode;
+  if (width > 0 && width < 360) return "vertical";
+  if (width >= 400) return "horizontal";
+  return previous || "horizontal";
+}
+
+function crispMoveDestination(file, folder, vault) {
+  if (!file || Array.isArray(file.children) || !Array.isArray(folder?.children)) throw new Error("请将单个文件拖到目标文件夹");
+  const target = folder.path ? `${folder.path}/${file.name}` : file.name;
+  if (target === file.path) return null;
+  if (vault.getAbstractFileByPath(target)) throw new Error("目标目录已有同名文件，未进行移动");
+  return target;
+}
+
+function crispNameDialog(app, title, submit) {
+  const modal = new (class extends Modal {
+    onOpen() {
+      this.setTitle(title);
+      const input = this.contentEl.createEl("input", { type: "text", placeholder: "名称" });
+      input.className = "crisp-fe-name-input";
+      input.setAttribute("aria-label", "名称");
+      const error = this.contentEl.createDiv({ cls: "crisp-fe-name-error" });
+      error.setAttribute("role", "alert");
+      let busy = false;
+      const save = async () => {
+        if (busy) return;
+        busy = true;
+        try { await submit(input.value); this.close(); }
+        catch (e) { error.textContent = e.message || "操作失败，请重试"; }
+        finally { busy = false; }
+      };
+      new Setting(this.contentEl).addButton(button => button.setButtonText("取消").onClick(() => this.close()))
+        .addButton(button => button.setButtonText("创建").setCta().onClick(save));
+      input.addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); save(); } });
+      input.focus();
+    }
+    onClose() { this.contentEl.empty(); }
+  })(app);
+  modal.open();
+  return modal;
+}
+
+class CrispFolderBrowser {
+  constructor(plugin, nativeContainer) {
+    this.plugin = plugin;
+    this.nativeContainer = nativeContainer;
+    this.root = nativeContainer.closest('.workspace-leaf-content[data-type="file-explorer"]');
+    this.doc = getOwnerDocument(nativeContainer);
+    this.win = getOwnerWindow(nativeContainer);
+    this.expanded = new Set([""]);
+    this.selectedPath = crispFolderPath(plugin.app.workspace.getActiveFile()?.path || "");
+    this.sort = plugin.settings.dualPaneSort === "modified" ? "modified" : "name";
+    this.enabled = false;
+    this.destroyed = false;
+    this.dirty = true;
+    this.descendants = Boolean(plugin.settings.dualPaneDescendants);
+    this.lastActivePath = plugin.app.workspace.getActiveFile()?.path;
+    this.entries = [];
+    this.cleanups = [];
+    this.treeRows = new Map();
+    this.fileRows = new Map();
+    this.expandAncestors(this.selectedPath);
+    this.create();
+    this.refresh();
+  }
+
+  element(tag, cls, parent, text) {
+    const el = this.doc.createElement(tag);
+    if (cls) el.className = cls;
+    if (text !== undefined) el.textContent = text;
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+
+  listen(el, name, handler, options) {
+    el.addEventListener(name, handler, options);
+    this.cleanups.push(() => el.removeEventListener(name, handler, options));
+  }
+
+  iconButton(parent, icon, label, handler) {
+    const button = this.element("button", "clickable-icon crisp-fe-browser-icon", parent);
+    button.type = "button";
+    button.setAttribute("aria-label", label);
+    setIcon(button, icon);
+    if (handler) this.listen(button, "click", handler);
+    return button;
+  }
+
+  create() {
+    const nativeTools = this.root.querySelector(".nav-buttons-container");
+    // Match native toolbar markup: fixed-size inner-pane buttons stretch
+    // Baseline's collapsed dot toolbar into vertical bars.
+    this.toggle = this.element("div", "clickable-icon nav-action-button crisp-fe-browser-toggle", nativeTools || this.root);
+    this.toggle.setAttribute("role", "button");
+    this.toggle.setAttribute("aria-label", "切换到双栏浏览");
+    this.toggle.tabIndex = 0;
+    crispRegisterIcons();
+    setIcon(this.toggle, DUAL_PANE_ICON_ID);
+    this.listen(this.toggle, "click", () => this.plugin.setDualPaneEnabled(true));
+    this.listen(this.toggle, "keydown", event => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.plugin.setDualPaneEnabled(true);
+    });
+    this.shell = this.element("section", "crisp-fe-browser", this.root);
+    this.shell.setAttribute("aria-label", "双栏文件浏览器");
+    this.shell.hidden = true;
+    const left = this.element("section", "crisp-fe-browser-navigation", this.shell);
+    const leftHeader = this.element("header", "crisp-fe-browser-header", left);
+    this.iconButton(leftHeader, SINGLE_PANE_ICON_ID, "切回单栏文件树", () => this.plugin.setDualPaneEnabled(false));
+    this.element("span", "crisp-fe-browser-heading", leftHeader, "文件夹");
+    this.iconButton(leftHeader, "house", "仓库根目录", () => this.selectFolder("", true));
+    this.iconButton(leftHeader, "folder-plus", "在当前目录新建文件夹", () => this.createEntry(false));
+    this.foldAllButton = this.iconButton(leftHeader, "chevrons-up-down", "展开所有文件夹", () => this.toggleAllFolders());
+    this.tree = this.element("div", "nav-files-container crisp-fe-folder-tree", left);
+    this.tree.setAttribute("role", "tree");
+    this.tree.setAttribute("aria-label", "文件夹导航");
+    this.tree.tabIndex = 0;
+    this.treeContent = this.element("div", "crisp-fe-folder-tree-content", this.tree);
+
+    this.separator = this.element("div", "crisp-fe-browser-separator", this.shell);
+    this.separator.tabIndex = 0;
+    this.separator.setAttribute("role", "separator");
+    this.separator.setAttribute("aria-orientation", "vertical");
+    this.separator.setAttribute("aria-label", "调整两栏宽度");
+    this.separator.setAttribute("aria-valuemin", "100");
+    this.separator.setAttribute("aria-valuemax", "500");
+    this.listen(this.separator, "pointerdown", e => this.startResize(e));
+    this.listen(this.separator, "keydown", e => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home"].includes(e.key)) return;
+      e.preventDefault(); e.stopPropagation();
+      const delta = (["ArrowLeft", "ArrowUp"].includes(e.key) ? -10 : 10);
+      if (this.layout === "vertical") {
+        this.setSize(this.folderWidth, e.key === "Home" ? 200 : this.folderHeight + delta);
+      } else {
+        this.setSize(e.key === "Home" ? 200 : this.folderWidth + delta, this.folderHeight);
+      }
+      this.saveSize();
+    });
+
+    const right = this.element("section", "crisp-fe-browser-directory", this.shell);
+    const rightHeader = this.element("header", "crisp-fe-browser-header", right);
+    this.back = this.iconButton(rightHeader, "chevron-left", "返回上一级文件夹", () => this.selectFolder(crispFolderPath(this.selectedPath), true));
+    this.heading = this.element("span", "crisp-fe-browser-heading", rightHeader);
+    this.locateButton = this.iconButton(rightHeader, "crosshair", "定位当前文件", () => this.revealActive(true));
+    this.iconButton(rightHeader, "file-plus", "在当前目录新建笔记", () => this.createEntry(true));
+    this.sortButton = this.iconButton(rightHeader, "more-horizontal", "浏览选项", e => this.showSortMenu(e));
+    this.list = this.element("div", "crisp-fe-browser-list", right);
+    this.list.setAttribute("role", "list");
+    this.list.setAttribute("aria-label", "当前文件夹内容");
+    this.list.tabIndex = 0;
+    this.viewport = this.element("div", "crisp-fe-browser-viewport", this.list);
+    this.listen(this.list, "scroll", () => this.renderListWindow(), { passive: true });
+    this.listen(this.list, "focusin", event => {
+      const path = event.target.closest("[data-entry-path]")?.dataset.entryPath;
+      if (path) this.focusedEntryPath = path;
+    });
+    this.empty = this.element("div", "crisp-fe-browser-empty", right, "这个文件夹是空的");
+    this.empty.hidden = true;
+    this.listen(this.treeContent, "click", e => this.handleTreeClick(e));
+    this.listen(this.tree, "keydown", e => this.handleTreeKey(e));
+    this.listen(this.tree, "contextmenu", e => this.showContextMenu(e, true));
+    this.listen(this.list, "contextmenu", e => this.showContextMenu(e, false));
+    this.listen(this.list, "dragstart", e => this.dragStart(e));
+    this.listen(this.shell, "dragover", e => this.dragOver(e));
+    this.listen(this.shell, "drop", e => this.drop(e));
+    this.listen(this.shell, "dragleave", e => { if (!this.shell.contains(e.relatedTarget)) this.clearDrop(); });
+    this.listen(this.shell, "dragend", () => this.clearDrop());
+    this.listen(this.list, "keydown", e => this.handleListKey(e));
+    this.listen(this.list, "click", e => {
+      const row = e.target.closest("[data-entry-path]");
+      if (row) this.openEntry(row.dataset.entryPath, e);
+    });
+    this.listen(this.list, "auxclick", e => {
+      if (e.button !== 1) return;
+      const row = e.target.closest("[data-entry-path]");
+      if (row) { e.preventDefault(); this.openEntry(row.dataset.entryPath, { ctrlKey: true }); }
+    });
+    const initialWidth = this.plugin.settings.dualPaneFolderWidth
+      ?? (typeof this.plugin.settings.dualPaneRatio === "number" && this.plugin.settings.dualPaneRatio > 1
+        ? this.plugin.settings.dualPaneRatio
+        : (this.plugin.settings.dualPaneRatio ? Math.round(this.plugin.settings.dualPaneRatio * 480) : 200));
+    const initialHeight = this.plugin.settings.dualPaneFolderHeight ?? 200;
+    this.setSize(initialWidth, initialHeight);
+    this.observeLayout();
+  }
+
+  runAction(action) {
+    return Promise.resolve().then(action).catch(error => {
+      console.error("Crisp File Explorer action failed", error);
+      new Notice(error.message || "操作失败，请重试");
+    });
+  }
+
+  createEntry(note, folderPath = this.selectedPath) {
+    this.nameModal?.close();
+    this.nameModal = crispNameDialog(this.plugin.app, note ? "新建笔记" : "新建文件夹", async name => {
+      if (this.destroyed) throw new Error("浏览器已关闭，请重新操作");
+      const parent = this.folder(folderPath);
+      if (!parent) throw new Error("目标目录已不存在");
+      const path = crispNewEntryPath(parent.path, name, note);
+      const vault = this.plugin.app.vault;
+      if (vault.getAbstractFileByPath(path)) throw new Error("已有同名项目，请换一个名称");
+      if (note) {
+        const file = await vault.create(path, "");
+        this.dirty = true;
+        this.selectFolder(parent.path, true);
+        await this.plugin.app.workspace.getLeaf(false).openFile(file);
+      } else {
+        await vault.createFolder(path);
+        this.dirty = true;
+        this.selectFolder(path, true);
+      }
+    });
+  }
+
+  showContextMenu(event, inTree) {
+    event.preventDefault(); event.stopPropagation();
+    const row = event.target.closest(inTree ? "[data-folder-path]" : "[data-entry-path]");
+    const path = row ? (inTree ? row.dataset.folderPath : row.dataset.entryPath) : this.selectedPath;
+    const file = path ? this.plugin.app.vault.getAbstractFileByPath(path) : this.folder("");
+    if (!file) return;
+    const menu = new Menu();
+    const isFolder = Array.isArray(file.children);
+    const add = (title, icon, action) => menu.addItem(item => item.setTitle(title).setIcon(icon).onClick(() => this.runAction(action)));
+    if (isFolder) {
+      add("新建笔记", "file-plus", () => this.createEntry(true, file.path));
+      add("新建文件夹", "folder-plus", () => this.createEntry(false, file.path));
+    } else {
+      add("打开", "file-text", () => this.openEntry(file.path));
+      add("在新标签页打开", "file-plus", () => this.openEntry(file.path, { ctrlKey: true }));
+    }
+    if (file.path) {
+      menu.addSeparator();
+      add("重命名", "pencil", () => this.plugin.app.fileManager.promptForFileRename(file));
+      add("删除…", "trash-2", () => this.plugin.app.fileManager.promptForDeletion(file));
+    }
+    menu.addSeparator();
+    // Core file actions above are explicit; this hook adds host/plugin extensions.
+    this.plugin.app.workspace.trigger("file-menu", menu, file, "crisp-file-explorer");
+    menu.showAtMouseEvent(event);
+    return menu;
+  }
+
+  revealActive(force = false) {
+    if (!force && !this.plugin.settings.dualPaneFollowActive) return false;
+    const file = this.plugin.app.workspace.getActiveFile();
+    if (!file) return false;
+    const present = this.entries?.some(entry => entry.path === file.path);
+    if (force || !present) this.selectFolder(crispFolderPath(file.path), true);
+    this.syncActiveFile();
+    this.focusEntry(file.path, false);
+    return true;
+  }
+
+  focusEntry(path, focus = true) {
+    const index = (this.entries || []).findIndex(entry => entry.path === path);
+    if (index < 0) { if (focus) this.list.focus(); return; }
+    const top = index * this.rowHeight;
+    if (top < this.list.scrollTop || top + this.rowHeight > this.list.scrollTop + this.list.clientHeight) {
+      this.list.scrollTop = Math.max(0, top - (this.list.clientHeight - this.rowHeight) / 2);
+    }
+    this.renderListWindow();
+    if (focus) this.fileRows.get(path)?.focus({ preventScroll: true });
+  }
+
+  focusList() {
+    const active = this.plugin.app.workspace.getActiveFile()?.path;
+    this.focusEntry(this.entries?.some(f => f.path === active) ? active : this.entries?.[0]?.path);
+  }
+
+  focusTree() {
+    (this.treeRows.get(this.selectedPath) || this.tree).focus({ preventScroll: true });
+  }
+
+  focusEditor() {
+    const leaf = this.plugin.app.workspace.getMostRecentLeaf?.();
+    if (!leaf || this.root.contains(leaf.view?.containerEl)) return;
+    this.plugin.app.workspace.setActiveLeaf(leaf, { focus: true });
+    if (leaf.view?.editor) leaf.view.editor.focus();
+    else leaf.view?.containerEl?.focus();
+  }
+
+  setDescendants(value) {
+    this.descendants = Boolean(value);
+    this.plugin.settings.dualPaneDescendants = this.descendants;
+    this.list.scrollTop = 0;
+    this.renderDirectory();
+    this.plugin.saveSettings();
+  }
+
+  observeLayout() {
+    this.layoutObserver?.disconnect();
+    this.layoutObserver = new this.win.ResizeObserver(() => {
+      if (this.destroyed || !this.enabled) return;
+      this.updateLayout();
+      this.renderListWindow();
+    });
+    this.layoutObserver.observe(this.shell);
+    this.layoutObserver.observe(this.list);
+  }
+
+  updateLayout() {
+    const width = this.shell.getBoundingClientRect().width;
+    if (!width) return;
+    const layout = crispPaneLayout(this.plugin.settings.dualPaneLayout, width, this.layout);
+    this.layout = layout;
+    this.shell.classList.toggle("is-vertical", layout === "vertical");
+    this.separator.setAttribute("aria-orientation", layout === "vertical" ? "horizontal" : "vertical");
+    this.separator.setAttribute("aria-label", layout === "vertical" ? "调整两栏高度" : "调整两栏宽度");
+    this.separator.setAttribute("aria-valuemin", layout === "vertical" ? "90" : "100");
+    this.separator.setAttribute("aria-valuemax", layout === "vertical" ? "450" : "500");
+    this.separator.setAttribute("aria-valuenow", String(layout === "vertical" ? (this.folderHeight || 200) : (this.folderWidth || 200)));
+    this.shell.classList.toggle("is-compact-directory", this.list.getBoundingClientRect().width < 240);
+  }
+
+  dragStart(event) {
+    const row = event.target.closest("[data-entry-path]");
+    const file = row && this.plugin.app.vault.getAbstractFileByPath(row.dataset.entryPath);
+    if (!file || Array.isArray(file.children) || !event.dataTransfer) return;
+    event.dataTransfer.setData("text/plain", this.plugin.app.fileManager.generateMarkdownLink(file, this.plugin.app.workspace.getActiveFile()?.path || ""));
+    const manager = this.plugin.app.dragManager;
+    if (manager?.dragFile && manager?.onDragStart) manager.onDragStart(event, manager.dragFile(event, file, "crisp-file-explorer"));
+    event.dataTransfer.effectAllowed = "copyMove";
+  }
+
+  getDraggedFile() {
+    const file = this.plugin.app.dragManager?.draggable?.file;
+    return file && !Array.isArray(file.children) && this.plugin.app.vault.getAbstractFileByPath(file.path) === file ? file : null;
+  }
+
+  dropFolder(event) {
+    const row = event.target.closest("[data-folder-path], .crisp-fe-browser-entry.is-folder");
+    if (row) return { folder: this.folder(row.dataset.folderPath ?? row.dataset.entryPath), element: row };
+    if (this.list.contains(event.target)) return { folder: this.folder(this.selectedPath), element: this.list };
+    return null;
+  }
+
+  clearDrop() {
+    this.dropTarget?.classList.remove("crisp-fe-drop-target");
+    this.dropTarget = null;
+  }
+
+  dragOver(event) {
+    const file = this.getDraggedFile();
+    const target = this.dropFolder(event);
+    this.clearDrop();
+    if (!file || !target?.folder) return;
+    event.preventDefault(); event.stopPropagation();
+    let destination;
+    try { destination = crispMoveDestination(file, target.folder, this.plugin.app.vault); } catch (_) { destination = null; }
+    if (event.dataTransfer) event.dataTransfer.dropEffect = destination ? "move" : "none";
+    if (destination) { this.dropTarget = target.element; this.dropTarget.classList.add("crisp-fe-drop-target"); }
+  }
+
+  drop(event) {
+    const file = this.getDraggedFile();
+    const target = this.dropFolder(event);
+    this.clearDrop();
+    if (!file || !target?.folder) return;
+    event.preventDefault(); event.stopPropagation();
+    this.runAction(async () => {
+      const path = crispMoveDestination(file, target.folder, this.plugin.app.vault);
+      if (path) await this.plugin.app.fileManager.renameFile(file, path);
+    });
+  }
+
+  folder(path) {
+    const vault = this.plugin.app.vault;
+    const file = path ? vault.getAbstractFileByPath(path) : vault.getRoot();
+    return Array.isArray(file?.children) ? file : null;
+  }
+
+  expandAncestors(path) {
+    let parent = crispFolderPath(path);
+    while (parent) { this.expanded.add(parent); parent = crispFolderPath(parent); }
+  }
+
+  selectFolder(path, reveal = false) {
+    if (!this.folder(path)) return false;
+    const changed = this.selectedPath !== path;
+    this.selectedPath = path;
+    this.expandAncestors(path);
+    this.renderTree();
+    if (changed || this.dirty) {
+      this.renderDirectory();
+      this.list.scrollTop = 0;
+    }
+    this.dirty = false;
+    if (reveal) this.treeRows.get(path)?.scrollIntoView({ block: "nearest" });
+    this.rail?.refresh({ reveal: false });
+    return true;
+  }
+
+  expandableFolders() {
+    const folders = [];
+    const pending = [this.folder("")];
+    while (pending.length) {
+      const folder = pending.pop();
+      const children = (folder?.children || []).filter(child => Array.isArray(child.children));
+      if (folder?.path && children.length) folders.push(folder.path);
+      pending.push(...children);
+    }
+    return folders;
+  }
+
+  toggleAllFolders() {
+    const folders = this.expandableFolders();
+    const collapse = folders.length > 0 && folders.every(path => this.expanded.has(path));
+    this.expanded = new Set(collapse ? [""] : ["", ...folders]);
+    this.renderTree();
+  }
+
+  toggleFolder(path, force) {
+    const next = force === undefined ? !this.expanded.has(path) : force;
+    if (next === this.expanded.has(path)) return false;
+    if (next) this.expanded.add(path); else this.expanded.delete(path);
+    this.renderTree();
+    this.treeRows.get(path)?.focus({ preventScroll: true });
+    return true;
+  }
+
+  handleTreeClick(e) {
+    const row = e.target.closest("[data-folder-path]");
+    if (!row) return;
+    const path = row.dataset.folderPath;
+    if (e.target.closest(".crisp-fe-folder-chevron")) this.toggleFolder(path);
+    else this.selectFolder(path);
+  }
+
+  handleTreeKey(e) {
+    if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault(); e.stopPropagation(); this.focusList(); return;
+    }
+    const rows = [...this.treeRows.values()];
+    const current = e.target.closest("[data-folder-path]") || this.treeRows.get(this.selectedPath) || rows[0];
+    const path = current?.dataset?.folderPath;
+    if (e.key === "F2") {
+      e.preventDefault(); e.stopPropagation();
+      const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
+      if (file && file.path) this.runAction(() => this.plugin.app.fileManager.promptForFileRename(file));
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
+      e.preventDefault(); e.stopPropagation();
+      const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
+      if (file && file.path) this.runAction(() => this.plugin.app.fileManager.promptForDeletion(file));
+      return;
+    }
+    if (e.altKey || e.ctrlKey || e.metaKey || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!current) return;
+    const index = rows.indexOf(current);
+    let target;
+    if (e.key === "ArrowUp") target = rows[Math.max(0, index - 1)];
+    if (e.key === "ArrowDown") target = rows[Math.min(rows.length - 1, index + 1)];
+    if (e.key === "Home") target = rows[0];
+    if (e.key === "End") target = rows.at(-1);
+    if (target) { this.selectFolder(target.dataset.folderPath); this.treeRows.get(target.dataset.folderPath)?.focus(); }
+    if (e.key === "ArrowRight") {
+      if (current.getAttribute("aria-expanded") === "false") this.toggleFolder(path, true);
+      else if (current.getAttribute("aria-expanded") === "true") rows[index + 1]?.focus();
+      else this.focusList();
+    }
+    if (e.key === "ArrowLeft") {
+      if (this.expanded.has(path)) this.toggleFolder(path, false);
+      else { const parent = crispFolderPath(path); this.selectFolder(parent, true); this.treeRows.get(parent)?.focus(); }
+    }
+    if (e.key === "Enter" || e.key === " ") this.selectFolder(path);
+  }
+
+  handleListKey(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault(); e.stopPropagation();
+      const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
+      if (path) this.openEntry(path, { ctrlKey: true });
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
+      e.preventDefault(); e.stopPropagation();
+      const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
+      const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
+      if (file && file.path) this.runAction(() => this.plugin.app.fileManager.promptForDeletion(file));
+      return;
+    }
+    if (e.altKey || e.metaKey || e.ctrlKey) return;
+    if (e.key === "Enter") {
+      const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
+      if (path) {
+        e.preventDefault(); e.stopPropagation();
+        this.openEntry(path, e);
+        return;
+      }
+    }
+    if (e.key === "Tab" || e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation();
+      if ((e.key === "Tab" && e.shiftKey) || e.key === "ArrowLeft" || e.key === "Escape") this.focusTree();
+      else this.focusEditor();
+      return;
+    }
+    if (!["ArrowUp", "ArrowDown", "Home", "End", "Backspace", "F2", "Delete"].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (e.key === "Backspace") { this.selectFolder(crispFolderPath(this.selectedPath), true); this.focusList(); return; }
+    const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
+    if (e.key === "F2") {
+      const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
+      if (file && file.path) this.runAction(() => this.plugin.app.fileManager.promptForFileRename(file));
+      return;
+    }
+    if (e.key === "Delete") {
+      const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
+      if (file && file.path) this.runAction(() => this.plugin.app.fileManager.promptForDeletion(file));
+      return;
+    }
+    const entries = this.entries || [];
+    const index = entries.findIndex(file => file.path === path);
+    const next = e.key === "Home" ? 0 : e.key === "End" ? entries.length - 1 : e.key === "ArrowDown" ? index + 1 : index - 1;
+    this.focusEntry(entries[Math.min(entries.length - 1, Math.max(0, next))]?.path);
+  }
+
+  renderTree() {
+    this.tree.dataset.crispFolderPath = this.selectedPath;
+    const focused = this.doc.activeElement?.dataset?.folderPath;
+    const scroll = this.tree.scrollTop;
+    this.treeRows.clear();
+    const fragment = this.doc.createDocumentFragment();
+    const append = (folder, depth) => {
+      const row = this.element("button", "nav-folder-title crisp-fe-folder-row", fragment);
+      row.type = "button";
+      row.dataset.path = folder.path;
+      row.dataset.folderPath = folder.path;
+      row.style.setProperty("--folder-depth", depth);
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-level", depth + 1);
+      row.setAttribute("aria-selected", String(folder.path === this.selectedPath));
+      row.tabIndex = folder.path === this.selectedPath ? 0 : -1;
+      row.title = folder.path;
+      const children = crispDirectoryEntries(folder).filter(child => Array.isArray(child.children));
+      const arrow = this.element("span", "crisp-fe-folder-chevron", row);
+      if (children.length) {
+        row.setAttribute("aria-expanded", String(this.expanded.has(folder.path)));
+        setIcon(arrow, this.expanded.has(folder.path) ? "chevron-down" : "chevron-right");
+      } else arrow.classList.add("is-empty");
+      const icon = this.element("span", "crisp-fe-browser-entry-icon", row);
+      setIcon(icon, "folder");
+      this.element("span", "nav-folder-title-content crisp-fe-browser-name", row, folder.name);
+      this.treeRows.set(folder.path, row);
+      if (this.expanded.has(folder.path)) for (const child of children) append(child, depth + 1);
+    };
+    for (const child of crispDirectoryEntries(this.folder("")).filter(f => Array.isArray(f.children))) append(child, 0);
+    const folders = this.expandableFolders();
+    const allExpanded = folders.length > 0 && folders.every(path => this.expanded.has(path));
+    if (this.foldAllButton) {
+      const label = allExpanded ? "收起所有文件夹" : "展开所有文件夹";
+      this.foldAllButton.setAttribute("aria-label", label);
+      this.foldAllButton.title = label;
+      this.foldAllButton.disabled = folders.length === 0;
+      setIcon(this.foldAllButton, allExpanded ? "chevrons-down-up" : "chevrons-up-down");
+    }
+    this.treeContent.replaceChildren(fragment);
+    this.tree.scrollTop = scroll;
+    if (focused !== undefined) this.treeRows.get(focused)?.focus({ preventScroll: true });
+    this.rail?.scheduleRefresh();
+  }
+
+  renderDirectory() {
+    const focusedPath = this.doc.activeElement?.dataset?.entryPath;
+    const folder = this.folder(this.selectedPath);
+    this.heading.textContent = folder?.name || this.plugin.app.vault.getName();
+    this.heading.title = this.selectedPath || this.plugin.app.vault.getName();
+    this.back.disabled = !this.selectedPath;
+    this.entries = crispCollectEntries(folder, this.sort, this.descendants);
+    this.rowHeight = this.descendants ? 52 : 38;
+    this.shell.classList.toggle("is-flat-view", Boolean(this.descendants));
+    this.list.setAttribute("aria-label", this.descendants ? "包含子文件夹的笔记" : "当前文件夹内容");
+    this.empty.textContent = this.descendants ? "当前目录及子目录中没有笔记" : "这个文件夹是空的";
+    this.empty.hidden = this.entries.length > 0;
+    this.windowKey = "";
+    this.renderListWindow();
+    if (focusedPath) this.fileRows.get(focusedPath)?.focus({ preventScroll: true });
+  }
+
+  renderListWindow() {
+    if (!this.entries || !this.viewport) return;
+    const { start, end } = crispListWindow(this.entries.length, this.list.scrollTop, this.list.clientHeight, this.rowHeight);
+    const key = `${start}:${end}`;
+    if (key === this.windowKey) return;
+    this.windowKey = key;
+    const focusedPath = this.viewport.contains(this.doc.activeElement) ? this.doc.activeElement?.closest("[data-entry-path]")?.dataset.entryPath : null;
+    this.fileRows.clear();
+    const fragment = this.doc.createDocumentFragment();
+    const activePath = this.plugin.app.workspace.getActiveFile()?.path;
+    for (let index = start; index < end; index++) {
+      const file = this.entries[index];
+      const wrapper = this.element("div", "crisp-fe-browser-list-item", fragment);
+      wrapper.setAttribute("role", "listitem");
+      wrapper.setAttribute("aria-posinset", String(index + 1));
+      wrapper.setAttribute("aria-setsize", String(this.entries.length));
+      const row = this.element("button", "crisp-fe-browser-entry", wrapper);
+      row.type = "button";
+      row.dataset.entryPath = file.path;
+      row.title = file.path;
+      const isFolder = Array.isArray(file.children);
+      row.draggable = !isFolder;
+      row.classList.toggle("is-folder", isFolder);
+      const icon = this.element("span", "crisp-fe-browser-entry-icon", row);
+      setIcon(icon, isFolder ? "folder" : file.extension === "md" ? "file-text" : file.extension === "canvas" ? "layout-dashboard" : "file");
+      const label = this.element("span", "crisp-fe-browser-label", row);
+      const displayName = isFolder
+        ? file.name
+        : file.extension === "md"
+        ? (file.basename || file.name.replace(/\.md$/i, ""))
+        : file.extension === "canvas"
+        ? (file.basename || file.name.replace(/\.canvas$/i, ""))
+        : file.name;
+      this.element("span", "crisp-fe-browser-name", label, displayName);
+      if (this.descendants) {
+        const parent = crispFolderPath(file.path);
+        const relative = this.selectedPath && parent.startsWith(`${this.selectedPath}/`) ? parent.slice(this.selectedPath.length + 1) : parent;
+        this.element("span", "crisp-fe-browser-path", label, parent === this.selectedPath ? "当前目录" : relative || "仓库根目录");
+      }
+      if (isFolder) setIcon(this.element("span", "crisp-fe-browser-entry-chevron", row), "chevron-right");
+      row.classList.toggle("is-active", file.path === activePath);
+      if (file.path === activePath) row.setAttribute("aria-current", "page");
+      this.fileRows.set(file.path, row);
+    }
+    this.viewport.style.paddingTop = `${start * this.rowHeight}px`;
+    this.viewport.style.paddingBottom = `${(this.entries.length - end) * this.rowHeight}px`;
+    this.viewport.replaceChildren(fragment);
+    if (focusedPath) (this.fileRows.get(focusedPath) || this.list).focus({ preventScroll: true });
+  }
+
+  syncActiveFile() {
+    const path = this.plugin.app.workspace.getActiveFile()?.path;
+    for (const [entryPath, row] of this.fileRows) {
+      const active = entryPath === path;
+      if (row.classList.contains("is-active") !== active) row.classList.toggle("is-active", active);
+      if (active && !row.hasAttribute("aria-current")) row.setAttribute("aria-current", "page");
+      else if (!active && row.hasAttribute("aria-current")) row.removeAttribute("aria-current");
+    }
+  }
+
+  openEntry(path, event = {}) {
+    const file = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (!file) return;
+    if (Array.isArray(file.children)) {
+      this.selectFolder(path, true);
+      this.list.focus();
+    } else {
+      const newTab = Boolean(event.metaKey || event.ctrlKey);
+      this.plugin.app.workspace.getLeaf(newTab ? "tab" : false).openFile(file).catch(error => {
+        console.error("Crisp File Explorer could not open file", error);
+        new Notice("文件打开失败，请重试");
+      });
+    }
+  }
+
+  showSortMenu(event) {
+    const menu = new Menu();
+    for (const [value, title] of [["name", "按名称排序"], ["modified", "最近修改优先"]]) {
+      menu.addItem(item => item.setTitle(title).setChecked(this.sort === value).onClick(() => {
+        this.sort = value;
+        this.plugin.settings.dualPaneSort = value;
+        this.plugin.saveSettings();
+        this.renderDirectory();
+      }));
+    }
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle("包含子文件夹笔记").setIcon("layers").setChecked(this.descendants).onClick(() => this.setDescendants(!this.descendants)));
+    menu.addItem(item => item.setTitle("自动跟随当前文件").setIcon("crosshair").setChecked(Boolean(this.plugin.settings.dualPaneFollowActive)).onClick(() => {
+      this.plugin.settings.dualPaneFollowActive = !this.plugin.settings.dualPaneFollowActive;
+      this.plugin.saveSettings();
+      if (this.plugin.settings.dualPaneFollowActive) this.revealActive(true);
+    }));
+    menu.addSeparator();
+    for (const [mode, title] of [["auto", "自动布局"], ["horizontal", "左右分栏"], ["vertical", "上下分栏"]]) {
+      menu.addItem(item => item.setTitle(title).setChecked((this.plugin.settings.dualPaneLayout || "auto") === mode).onClick(() => {
+        this.plugin.settings.dualPaneLayout = mode;
+        this.plugin.saveSettings();
+        for (const browser of this.plugin.folderBrowsers.values()) browser.updateLayout();
+      }));
+    }
+    menu.showAtMouseEvent(event);
+  }
+
+  setRatio(value) {
+    if (typeof value === "number" && value >= 50) {
+      this.setSize(value, this.folderHeight || 200);
+      return;
+    }
+    this.ratio = crispPaneRatio(value);
+    const rect = this.shell ? this.shell.getBoundingClientRect() : null;
+    const total = (rect && rect.width > 0) ? rect.width : 480;
+    const width = Math.round(this.ratio * total);
+    this.setSize(width, this.folderHeight || 200, rect);
+  }
+
+  setSize(width, height, rect = null) {
+    const box = rect || (this.shell ? this.shell.getBoundingClientRect() : null);
+    this.folderWidth = crispPaneFolderWidth(width, box?.width);
+    this.folderHeight = crispPaneFolderHeight(height, box?.height);
+    this.ratio = crispPaneRatio(box && box.width > 0 ? this.folderWidth / box.width : 0.43);
+    this.shell.style.setProperty("--crisp-fe-folder-width", `${this.folderWidth}px`);
+    this.shell.style.setProperty("--crisp-fe-folder-height", `${this.folderHeight}px`);
+    this.shell.style.setProperty("--crisp-fe-folder-share", `${this.folderWidth}px`);
+    const isVertical = this.layout === "vertical";
+    this.separator.setAttribute("aria-orientation", isVertical ? "horizontal" : "vertical");
+    this.separator.setAttribute("aria-valuenow", String(isVertical ? this.folderHeight : this.folderWidth));
+  }
+
+  saveSize() {
+    this.plugin.settings.dualPaneFolderWidth = this.folderWidth;
+    this.plugin.settings.dualPaneFolderHeight = this.folderHeight;
+    this.plugin.settings.dualPaneRatio = this.ratio;
+    this.plugin.saveSettings();
+  }
+
+  saveRatio() {
+    this.saveSize();
+  }
+
+  startResize(event) {
+    if (event.button !== 0 || event.isPrimary === false || this.resizeCleanup) return;
+    event.preventDefault(); event.stopPropagation();
+    const win = getOwnerWindow(this.shell);
+    const id = event.pointerId;
+    const initialWidth = this.folderWidth || 200;
+    const initialHeight = this.folderHeight || 200;
+    this.shell.classList.add("is-resizing");
+    const move = e => {
+      if (e.pointerId !== id) return;
+      const rect = this.shell.getBoundingClientRect();
+      const vertical = this.layout === "vertical";
+      if (vertical) {
+        this.setSize(this.folderWidth, Math.round(e.clientY - rect.top), rect);
+      } else {
+        this.setSize(Math.round(e.clientX - rect.left), this.folderHeight, rect);
+      }
+    };
+    const finish = e => {
+      if (e.type !== "blur" && e.pointerId !== id) return;
+      const cancel = e.type !== "pointerup";
+      if (cancel) this.setSize(initialWidth, initialHeight);
+      this.resizeCleanup();
+      if (!cancel) this.saveSize();
+    };
+    this.resizeCleanup = () => {
+      win.removeEventListener("pointermove", move);
+      win.removeEventListener("pointerup", finish);
+      win.removeEventListener("pointercancel", finish);
+      win.removeEventListener("blur", finish);
+      this.shell.classList.remove("is-resizing");
+      this.resizeCleanup = null;
+    };
+    win.addEventListener("pointermove", move);
+    win.addEventListener("pointerup", finish);
+    win.addEventListener("pointercancel", finish);
+    win.addEventListener("blur", finish);
+  }
+
+  onVaultChange(kind, file, oldPath) {
+    const relevant = path => crispFolderPath(path) === this.selectedPath || (this.descendants && (!this.selectedPath || path.startsWith(`${this.selectedPath}/`)));
+    if (kind === "modify" && (this.sort !== "modified" || !relevant(file.path))) return;
+    if (!Array.isArray(file.children) && !relevant(file.path) && !(oldPath && relevant(oldPath))) return;
+    if (oldPath) {
+      this.selectedPath = crispRewritePath(this.selectedPath, oldPath, file.path);
+      this.expanded = new Set([...this.expanded].map(path => crispRewritePath(path, oldPath, file.path)));
+    } else if (kind === "delete") {
+      this.selectedPath = crispRewritePath(this.selectedPath, file.path, null);
+      this.expanded = new Set([...this.expanded].filter(path => path !== file.path && !path.startsWith(`${file.path}/`)));
+    }
+    this.dirty = true;
+    if (this.changeTimer) this.win.clearTimeout(this.changeTimer);
+    this.changeTimer = this.win.setTimeout(() => {
+      this.changeTimer = null;
+      if (!this.destroyed) this.refresh();
+    }, kind === "modify" ? 250 : 80);
+  }
+
+  refresh() {
+    if (this.destroyed) return;
+    const nextWindow = getOwnerWindow(this.nativeContainer);
+    if (nextWindow !== this.win) {
+      this.resizeCleanup?.();
+      if (this.changeTimer) this.win.clearTimeout(this.changeTimer);
+      this.changeTimer = null;
+      this.win = nextWindow;
+      this.doc = getOwnerDocument(this.nativeContainer);
+      this.dirty = true;
+      this.plugin.enableDocument(this.doc);
+      this.observeLayout();
+    }
+    const enabled = Boolean(this.plugin.settings.dualPaneEnabled);
+    const changed = enabled !== this.enabled;
+    this.enabled = enabled;
+    if (changed) {
+      this.root.classList.toggle("crisp-fe-browser-open", enabled);
+      this.shell.hidden = !enabled;
+      this.nativeContainer.inert = enabled;
+      if (!enabled) { this.resizeCleanup?.(); this.clearDrop(); }
+      else this.updateLayout();
+    }
+    if (!enabled) { this.rail?.setEnabled(false); return; }
+    if (!this.folder(this.selectedPath)) this.selectedPath = "";
+    if (this.dirty || changed) {
+      this.renderTree(); this.renderDirectory(); this.dirty = false;
+    } else this.syncActiveFile();
+    const activePath = this.plugin.app?.workspace?.getActiveFile?.()?.path;
+    if (activePath !== this.lastActivePath) {
+      this.lastActivePath = activePath;
+      this.revealActive(false);
+    }
+    if (!this.rail) this.rail = new FileExplorerRail(this.plugin, this.tree);
+    this.rail.refresh({ immediate: changed });
+  }
+
+  destroy() {
+    this.destroyed = true;
+    this.resizeCleanup?.();
+    this.clearDrop();
+    this.layoutObserver?.disconnect();
+    this.nameModal?.close();
+    if (this.changeTimer) this.win.clearTimeout(this.changeTimer);
+    this.rail?.destroy();
+    for (const cleanup of this.cleanups) cleanup();
+    this.cleanups.length = 0;
+    this.root.classList.remove("crisp-fe-browser-open");
+    this.nativeContainer.inert = false;
+    this.shell.remove();
+    this.toggle.remove();
+  }
+}
+
 module.exports = class CrispFileExplorerPlugin extends Plugin {
   async onload() {
     this.unloading = false;
     this.controllers = new Map();
+    this.folderBrowsers = new Map();
     this.audio = new CrispAudio();
     this.refreshQueued = false;
     this.refreshFrame = null;
@@ -3505,11 +4442,18 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.observer = null;
     this.enabledDocuments = new Set();
     await this.loadSettings();
+    crispRegisterIcons();
     this.addSettingTab(new CrispFileExplorerSettingTab(this.app, this));
 
     this.enableDocument(getOwnerDocument(this.app.workspace.containerEl));
     this.app.workspace.onLayoutReady(() => {
       if (!this.unloading) this.startRuntime();
+    });
+
+    this.addCommand({
+      id: "toggle-dual-pane",
+      name: "切换轻量双栏浏览",
+      callback: () => this.setDualPaneEnabled(!this.settings.dualPaneEnabled),
     });
 
     this.addCommand({
@@ -3531,6 +4475,16 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       },
     });
 
+  }
+
+  async setDualPaneEnabled(enabled) {
+    this.settings.dualPaneEnabled = Boolean(enabled);
+    this.activeRevealRunId += 1;
+    this.cancelActiveRevealFrame();
+    this.clearActiveRevealTimers();
+    for (const browser of this.folderBrowsers.values()) browser.refresh();
+    this.scheduleRefresh({ immediate: true });
+    await this.saveSettings();
   }
 
   getOpenMarkdownPaths() {
@@ -3585,12 +4539,17 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
         this.openMarkdownPaths.add(file.path);
       }
       const transition = !isAlreadyOpen;
-      if (file && file.extension === "md") {
+      if (file && (file.extension === "md" || file.extension === "canvas")) {
         this.scheduleActiveReveal({ transition });
       } else {
         this.scheduleRefresh({ transition });
       }
     }));
+    for (const kind of ["create", "delete", "rename", "modify"]) {
+      this.registerEvent(this.app.vault.on(kind, (file, oldPath) => {
+        for (const browser of this.folderBrowsers.values()) browser.onVaultChange(kind, file, oldPath);
+      }));
+    }
     this.registerEvent(this.app.workspace.on("window-open", () => this.scheduleRefresh()));
     this.registerEvent(this.app.workspace.on("window-close", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
@@ -3638,6 +4597,8 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       controller.destroy();
     }
     this.controllers.clear();
+    for (const browser of this.folderBrowsers?.values() || []) browser.destroy();
+    this.folderBrowsers?.clear();
   }
 
   async loadSettings() {
@@ -3815,6 +4776,9 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     if (!folderPath) return false;
     const leaves = this.app.workspace.getLeavesOfType ? this.app.workspace.getLeavesOfType("file-explorer") : [];
     let didExpand = false;
+    for (const browser of this.folderBrowsers?.values() || []) {
+      if (browser.enabled) didExpand = browser.toggleFolder(folderPath, true) || didExpand;
+    }
 
     for (const leaf of leaves) {
       const view = leaf.view;
@@ -3956,6 +4920,10 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   }
 
   revealActiveFileInExplorer() {
+    if (this.settings.dualPaneEnabled) {
+      for (const browser of this.folderBrowsers?.values() || []) if (browser.enabled) browser.refresh();
+      return true;
+    }
     if (this.isInteractionLocked()) return false;
     if (!this.isMarkdownActiveLeaf()) return false;
 
@@ -4079,7 +5047,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       const viewRoot = leaf && leaf.view && leaf.view.containerEl;
       if (!viewRoot || typeof viewRoot.querySelectorAll !== "function") continue;
       for (const container of viewRoot.querySelectorAll(".nav-files-container")) {
-        containers.add(container);
+        if (!container.classList?.contains("crisp-fe-folder-tree")) containers.add(container);
       }
     }
 
@@ -4088,7 +5056,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       for (const container of workspaceRoot.querySelectorAll(
         '.workspace-leaf-content[data-type="file-explorer"] .nav-files-container'
       )) {
-        containers.add(container);
+        if (!container.classList?.contains("crisp-fe-folder-tree")) containers.add(container);
       }
     }
     return containers;
@@ -4099,7 +5067,12 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     if (this.unloading) return createdControllers;
     const containers = this.getFileExplorerContainers();
 
+    if (!this.folderBrowsers) this.folderBrowsers = new Map();
     for (const container of containers) {
+      if (container.closest?.('.workspace-leaf-content[data-type="file-explorer"]')) {
+        if (!this.folderBrowsers.has(container)) this.folderBrowsers.set(container, new CrispFolderBrowser(this, container));
+        else this.folderBrowsers.get(container).refresh();
+      }
       this.enableDocument(getOwnerDocument(container));
       if (!this.controllers.has(container)) {
         const controller = new FileExplorerRail(this, container);
@@ -4116,6 +5089,13 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
         this.controllers.delete(container);
       } else if (!controller.enabled) {
         controller.setEnabled(controller.isVisible());
+      }
+    }
+
+    for (const [container, browser] of this.folderBrowsers) {
+      if (!containers.has(container) || !isConnectedToOwnerDocument(container)) {
+        browser.destroy();
+        this.folderBrowsers.delete(container);
       }
     }
 
