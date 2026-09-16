@@ -1638,6 +1638,22 @@ test("runtime workspace listeners start once, after layout ready", () => {
   assert.doesNotMatch(beforeReady, /workspace\.on\("(?:layout-change|active-leaf-change|file-open)"/);
 });
 
+test("orb style refresh covers native and dual-pane rails", () => {
+  const { PluginClass } = loadPluginRuntime();
+  const calls = [];
+  const rail = (name) => ({
+    updateOrbStyle: () => calls.push(`${name}:style`),
+    requestFrame: () => calls.push(`${name}:frame`),
+  });
+  const plugin = Object.create(PluginClass.prototype);
+  plugin.controllers = new Map([["native", rail("native")]]);
+  plugin.folderBrowsers = new Map([["dual", { rail: rail("dual") }]]);
+
+  plugin.updateOrbStyles();
+
+  assert.deepEqual(calls, ["native:style", "native:frame", "dual:style", "dual:frame"]);
+});
+
 test("explorer discovery includes file explorer leaves from secondary windows", () => {
   const { PluginClass } = loadPluginRuntime();
   const plugin = Object.create(PluginClass.prototype);

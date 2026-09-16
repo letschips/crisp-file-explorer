@@ -3340,20 +3340,20 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
           .setValue(normalizeOrbStyle(this.plugin.settings.orbStyle))
           .onChange(async (value) => {
             const selectedStyle = normalizeOrbStyle(value);
+            this.plugin.settings.orbStyle = selectedStyle;
+            this.plugin.updateOrbStyles();
             if (selectedStyle !== "soccer") {
               const check = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-file-explorer", true);
               if (!check.valid) {
                 new Notice("🔒 切换其它小球属于 Crisp 激活用户专属功能（未激活仅可使用默认足球）");
                 this.plugin.settings.orbStyle = "soccer";
-                await this.plugin.saveSettings();
                 this.plugin.updateOrbStyles();
+                await this.plugin.saveSettings();
                 this.display();
                 return;
               }
             }
-            this.plugin.settings.orbStyle = selectedStyle;
             await this.plugin.saveSettings();
-            this.plugin.updateOrbStyles();
           })
       );
 
@@ -4808,6 +4808,12 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     for (const controller of this.controllers.values()) {
       controller.updateOrbStyle();
       controller.requestFrame();
+    }
+    for (const browser of this.folderBrowsers?.values() || []) {
+      const rail = browser.rail;
+      if (!rail || typeof rail.updateOrbStyle !== "function") continue;
+      rail.updateOrbStyle();
+      rail.requestFrame();
     }
   }
 
