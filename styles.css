@@ -12,7 +12,7 @@
 */
 
 body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"] .nav-files-container.crisp-fe-container {
-  --crisp-fe-rail-x: 9px;
+  --crisp-fe-rail-x: 12px;
   --crisp-fe-accent: var(--interactive-accent, var(--color-accent));
   --crisp-fe-active-bg: color-mix(in srgb, var(--crisp-fe-accent) 12%, transparent);
   --crisp-fe-hover-bg: color-mix(in srgb, var(--crisp-fe-accent) 9%, var(--background-modifier-hover));
@@ -21,7 +21,7 @@ body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explore
   --nav-indentation-guide-color: transparent;
   --nav-indentation-guide-color-active: transparent;
   position: relative;
-  padding-left: 18px;
+  padding-left: 21px;
   overflow-x: clip;
   overflow-clip-margin: 14px;
 }
@@ -132,7 +132,8 @@ body.crisp-file-explorer-enabled .crisp-fe-tick.is-folder {
 body.crisp-file-explorer-enabled .crisp-fe-tick.is-line {
   height: 2px;
   background: var(--crisp-fe-accent);
-  opacity: 0.9;
+  opacity: 0.95;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--crisp-fe-accent) 45%, transparent);
 }
 
 body.crisp-file-explorer-enabled .crisp-fe-tick.is-today::after {
@@ -195,7 +196,7 @@ body.crisp-file-explorer-enabled .crisp-fe-orb {
 }
 
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="redball"] {
-  left: calc(var(--crisp-fe-rail-x) + 2px);
+  left: var(--crisp-fe-rail-x);
   width: 18px;
   height: 18px;
   margin: -9px 0 0 -9px;
@@ -207,6 +208,9 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="redball"] {
     0 7px 16px rgba(0, 0, 0, 0.2);
 }
 
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character1"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character2"],
+body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character3"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="soccer"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="basketball"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="tennis"],
@@ -245,7 +249,7 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character8"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character9"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character10"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"] {
-  left: calc(var(--crisp-fe-rail-x) + 3px);
+  left: var(--crisp-fe-rail-x);
   width: 22px;
   height: 22px;
   margin: -11px 0 0 -11px;
@@ -255,10 +259,11 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"] {
   box-shadow: none;
 }
 
-body.crisp-file-explorer-enabled .crisp-fe-orb-ball {
+body.crisp-file-explorer-enabled .crisp-fe-orb-ball,
+body.crisp-file-explorer-enabled .crisp-fe-browser .crisp-fe-orb-ball {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
   transform-origin: 50% 50%;
   transform-box: border-box;
   shape-rendering: geometricPrecision;
@@ -350,34 +355,14 @@ body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character8"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character9"],
 body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character10"] {
   left: var(--crisp-fe-rail-x);
-  width: 24px;
-  height: 24px;
-  margin: -12px 0 0 -12px;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
   border: 0;
   background: transparent;
   border-radius: 0;
   box-shadow: none;
   overflow: visible;
-}
-
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character1"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character2"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character3"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlax"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="pikachu"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="snorlaxface"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="batman"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="superman"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character4"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character5"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character6"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character7"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character8"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character9"],
-body.crisp-file-explorer-enabled .crisp-fe-orb[data-orb-style="character10"] {
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
 }
 
 body.crisp-file-explorer-enabled .crisp-fe-orb.is-dragging {
@@ -661,7 +646,7 @@ body.crisp-file-explorer-enabled .crisp-fe-browser-icon {
 }
 body.crisp-file-explorer-enabled .crisp-fe-browser-icon:disabled { opacity: .28; }
 body.crisp-file-explorer-enabled .crisp-fe-browser-icon:hover:not(:disabled) { background: var(--background-modifier-hover); }
-body.crisp-file-explorer-enabled .crisp-fe-browser svg { width: 15px; height: 15px; stroke-width: 1.65; }
+body.crisp-file-explorer-enabled :is(.crisp-fe-browser-header, .crisp-fe-browser-list, .crisp-fe-folder-row) svg { width: 15px; height: 15px; stroke-width: 1.65; }
 body.crisp-file-explorer-enabled .crisp-fe-browser-separator {
   position: relative;
   --crisp-fe-divider-color: color-mix(in srgb, var(--interactive-accent) 38%, transparent);
@@ -685,7 +670,7 @@ body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explore
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
-  padding: 4px 8px 16px 18px;
+  padding: 4px 8px 16px 21px;
   overflow-y: auto;
   overflow-x: hidden;
   overflow-clip-margin: 0;

@@ -2512,3 +2512,81 @@ test("renderOrbBall accumulates rotation per viewport pixel, not scroll pixel", 
   assert.equal(controller.orbRotation, rotationBefore,
     "orbRotation should not change when viewport Y is unchanged (scroll + display move together)");
 });
+
+
+function waveRail(reduced = false) {
+  const { FileExplorerRail } = loadPluginRuntime({ window: { matchMedia: () => ({ matches: reduced }) } });
+  const rail = {
+    displayY: 0, isDragging: false, tickSideMap: new Map(),
+    tickMarks: [
+      { y: 0, itemIndex: 0, kind: "long", isFile: true },
+      { y: 80, itemIndex: 1, kind: "long", isFile: true, isMagnet: true },
+    ],
+    tickEls: Array.from({ length: 2 }, () => ({ style: {}, classList: fakeClassList() })),
+    items: [], dynamicTickRange: [0, -1], dynamicItemRange: [0, -1], nearestTickIndex: -1,
+    orb: { style: {} }, updateRailLineFocus() {}, renderOrbBall() {},
+  };
+  rail.render = () => FileExplorerRail.prototype.render.call(rail);
+  return rail;
+}
+
+test("wave never dims the nearest or magnetic tick below its semantic opacity", () => {
+  const rail = waveRail(); rail.render();
+  assert.equal(Number(rail.tickEls[0].style.opacity), 1);
+  assert.ok(Number(rail.tickEls[1].style.opacity) >= 0.78);
+});
+
+test("wave brightness stays continuous across the former five-percent cutoff", () => {
+  const rail = waveRail();
+  const boundary = 34 * Math.sqrt(-2 * Math.log(0.05));
+  rail.tickMarks[1].y = boundary - 0.1; rail.render();
+  const before = Number(rail.tickEls[1].style.opacity || 0.78);
+  rail.tickMarks[1].y = boundary + 0.1; rail.render();
+  const after = Number(rail.tickEls[1].style.opacity || 0.78);
+  assert.ok(Math.abs(before - after) < 0.01, `${before} -> ${after}`);
+});
+
+test("wave opacity is cleared outside the render range and under reduced motion", () => {
+  const rail = waveRail(); rail.render();
+  rail.displayY = 1000; rail.render();
+  assert.equal(rail.tickEls[0].style.opacity, "");
+  assert.equal(rail.tickEls[1].style.opacity, "");
+  const reduced = waveRail(true);
+  reduced.tickEls[0].style.opacity = "0.90"; reduced.render();
+  assert.equal(reduced.tickEls[0].style.opacity, "");
+});
+
+test("dual-pane browser does not shrink orb svg below full size", () => {
+  const css = readStyles();
+  assert.doesNotMatch(css, /\.crisp-fe-browser\s+svg\s*\{/, "should not have an unconstrained .crisp-fe-browser svg rule that shrinks the orb");
+  assert.match(css, /\.crisp-fe-browser\s+\.crisp-fe-orb-ball[\s\S]*?width:\s*100%\s*!important/);
+});
+
+test("all orb styles center on the rail line without horizontal bias", () => {
+  const css = readStyles();
+  assert.doesNotMatch(
+    css,
+    /\.crisp-fe-orb\[data-orb-style=[^\]]+\]\s*\{[^}]*left:\s*calc\(var\(--crisp-fe-rail-x\)\s*\+/,
+    "orb styles should not apply an asymmetric rightward offset to left coordinate"
+  );
+});
+
+test("character orb styles use the same 22px geometry as rotating orbs without legacy shrink overrides", () => {
+  const css = readStyles();
+  assert.match(
+    css,
+    /\.crisp-fe-orb\[data-orb-style="character1"\][\s\S]*?width:\s*22px;\s*height:\s*22px;\s*margin:\s*-11px\s+0\s+0\s+-11px;/,
+    "character orbs should match 22px baseline dimensions"
+  );
+  assert.doesNotMatch(
+    css,
+    /\.crisp-fe-orb\[data-orb-style="character\d+"\]\s*\{[^}]*width:\s*20px;/,
+    "character orbs should not be shrunk down to 20px"
+  );
+  assert.doesNotMatch(
+    css,
+    /\.crisp-fe-orb\[data-orb-style="character\d+"\]\s*\{[^}]*width:\s*24px;/,
+    "character orbs should not have legacy 24px declaration"
+  );
+});
+

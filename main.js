@@ -2698,6 +2698,7 @@ class FileExplorerRail {
       const baseTransform = `translate3d(0px, -50%, 0) scaleX(${getTickBaseWidth(mark) / LINE_WIDTH})`;
       if (!preserveMotion) {
         el.classList.remove("is-line", "is-nearest");
+        if (el.style.opacity) el.style.opacity = "";
         this.tickSideMap.delete(index);
       }
       if (!preserveMotion || !el.style.transform) {
@@ -2786,6 +2787,7 @@ class FileExplorerRail {
       const el = this.tickEls[index];
       if (!tick || !el) continue;
       el.classList.remove("is-line", "is-nearest");
+      if (el.style.opacity) el.style.opacity = "";
       const baseTransform = `translate3d(0px, -50%, 0) scaleX(${getTickBaseWidth(tick) / LINE_WIDTH})`;
       if (tick.renderedTransform !== baseTransform) {
         el.style.transform = baseTransform;
@@ -2803,8 +2805,10 @@ class FileExplorerRail {
       const el = this.tickEls[index];
       const distance = tick.y - this.displayY;
       const progress = tick.itemIndex === undefined ? 0 : morphProgress(distance);
+      const wave = tick.itemIndex === undefined || prefersReducedMotion.matches ? 0 : gaussianInfluence(distance, BULGE_SIGMA);
       const baseWidth = getTickBaseWidth(tick);
-      const width = mix(baseWidth, LINE_WIDTH, progress);
+      const waveProgress = Math.max(progress, wave * 0.76);
+      const width = mix(baseWidth, LINE_WIDTH, waveProgress);
       const x = mix(waveOffset(this.displayY, tick.y), DOT_SIZE + 15, progress);
 
       if (this.isDragging) {
@@ -2834,6 +2838,22 @@ class FileExplorerRail {
 
       el.classList.toggle("is-line", progress > 0.5);
       el.classList.toggle("is-nearest", index === nearestTick);
+
+      if (wave > 0) {
+        let baseOpacity = 0.56;
+        if (tick.isFile === false) baseOpacity = 0.35;
+        else if (tick.kind !== "long") baseOpacity = 0.28;
+        // Match the CSS cascade before brightening; semantic highlights must never dim.
+        if (progress > 0.5) baseOpacity = 0.95;
+        if (tick.isMagnet) baseOpacity = 0.78;
+        if (index === nearestTick) baseOpacity = 1;
+        const targetOpacity = mix(baseOpacity, Math.max(baseOpacity, 0.96), wave);
+        const nextOpacity = targetOpacity.toFixed(2);
+        if (el.style.opacity !== nextOpacity) el.style.opacity = nextOpacity;
+      } else if (el.style.opacity) {
+        el.style.opacity = "";
+      }
+
       const scaleX = width / LINE_WIDTH;
       const transformValue = `translate3d(${x}px, -50%, 0) scaleX(${scaleX})`;
       if (tick.renderedTransform !== transformValue) {
