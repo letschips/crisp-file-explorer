@@ -4824,6 +4824,17 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.enabledDocuments.add(ownerDocument);
   }
 
+  // Companion plugins need the resolved sound, not the "matchOrb" setting token.
+  getResolvedSoundStyle(ownerDocument) {
+    const mainDocument = this.app.workspace.containerEl.ownerDocument;
+    const orb = ownerDocument?.querySelector(".crisp-fe-orb[data-orb-style]")
+      || mainDocument.querySelector(".crisp-fe-orb[data-orb-style]");
+    return resolveSoundStyle(
+      this.settings.soundStyle,
+      orb?.dataset.orbStyle || resolveOrbStyle(this.settings.orbStyle),
+    );
+  }
+
   updateOrbStyles() {
     for (const controller of this.controllers.values()) {
       controller.updateOrbStyle();

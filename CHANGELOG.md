@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 — 2026-09-27
+
+- 为伴随插件提供 `getResolvedSoundStyle(ownerDocument)`，解析 `matchOrb` 和实际小球样式，避免 Reading Rail 将设置标记误作音色。
+
 ## 0.4.2 — 2026-09-17
 
 - 刻度新增高斯波浪展开与柔光效果，修复语义刻度高亮并消除 5% 阈值处的亮度跳变。
