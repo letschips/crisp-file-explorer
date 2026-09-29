@@ -26,6 +26,9 @@ function loadPluginRuntime(overrides = {}) {
     STATIC_ORB_STYLES,
     renderAboutCard: typeof renderAboutCard === "function" ? renderAboutCard : undefined,
     CRISP_LICENSE_PRODUCTS,
+    describeLicenseStatus: typeof describeLicenseStatus === "function" ? describeLicenseStatus : undefined,
+    soundStyleForOrb: typeof soundStyleForOrb === "function" ? soundStyleForOrb : undefined,
+    createLicenseVerificationCache: typeof createLicenseVerificationCache === "function" ? createLicenseVerificationCache : undefined,
   };`;
   const clearedTimers = [];
   const scheduledTimers = new Map();
@@ -56,6 +59,7 @@ function loadPluginRuntime(overrides = {}) {
         Plugin: class Plugin {},
         PluginSettingTab: class PluginSettingTab {},
         Setting: class Setting {},
+        Notice: class Notice {},
         normalizePath: (value) => value,
       };
     },
@@ -85,6 +89,7 @@ function loadPluginRuntime(overrides = {}) {
     clearedTimers,
     scheduledTimers,
     scheduledFrames,
+    context,
   };
 }
 
@@ -2590,3 +2595,189 @@ test("character orb styles use the same 22px geometry as rotating orbs without l
   );
 });
 
+
+test("drag tick sound progress follows the rail position instead of NaN", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  const progresses = [];
+  const makeEl = () => ({ classList: { toggle() {}, remove() {} }, style: {} });
+  const tickMarks = Array.from({ length: 5 }, (_, index) => ({ y: index * 20, kind: "long", itemIndex: index, isFile: true }));
+  const controller = Object.assign(Object.create(FileExplorerRail.prototype), {
+    isDragging: true,
+    displayY: 60,
+    tickMarks,
+    tickEls: tickMarks.map(makeEl),
+    // The DOM container of the tick elements has no `length`.
+    ticks: { children: [] },
+    dynamicTickRange: [0, -1],
+    dynamicItemRange: [0, -1],
+    nearestTickIndex: -1,
+    tickSideMap: new Map(tickMarks.map((_, index) => [index, 1])),
+    items: [],
+    orb: { style: {}, dataset: { orbStyle: "soccer" } },
+    plugin: {
+      settings: { soundEnabled: true, soundStyle: "scale", pitchScaleEnabled: true },
+      audio: { tick: (style, progress) => progresses.push(progress) },
+    },
+    updateRailLineFocus() {},
+    renderOrbBall() {},
+  });
+
+  controller.render();
+
+  assert.deepEqual(progresses, [0, 0.25, 0.5]);
+});
+
+test("every orb-matched sound style has its own tick and release tone", () => {
+  const { CrispAudio, RANDOM_DAILY_ORB_STYLES, soundStyleForOrb } = loadPluginRuntime();
+  const toneFor = (method, style) => {
+    const tones = [];
+    const audio = Object.create(CrispAudio.prototype);
+    audio.lastTickAt = -Infinity;
+    audio.playTone = (options) => tones.push(options);
+    if (method === "tick") audio.tick(style, 0.5, false);
+    else audio.release(style);
+    return JSON.stringify(tones[0]);
+  };
+  const matched = new Set(Array.from(RANDOM_DAILY_ORB_STYLES, soundStyleForOrb));
+  matched.delete("soft");
+  for (const style of matched) {
+    assert.notEqual(toneFor("tick", style), toneFor("tick", "soft"), `${style} tick falls back to soft`);
+    assert.notEqual(toneFor("release", style), toneFor("release", "soft"), `${style} release falls back to soft`);
+  }
+});
+
+test("license status tolerates licenses without an expiry date or user name", () => {
+  const { describeLicenseStatus } = loadPluginRuntime();
+  assert.equal(
+    describeLicenseStatus({ valid: true, payload: { userName: "A", expiresAt: "2027-01-02T00:00:00Z" } }),
+    "✅ 已激活（授权给: A，到期时间: 2027-01-02）",
+  );
+  assert.equal(describeLicenseStatus({ valid: true, payload: {} }), "✅ 已激活（到期时间: 长期有效）");
+  assert.equal(describeLicenseStatus({ valid: false, reason: "授权签名无效" }), "❌ 未激活（授权签名无效）");
+});
+
+test("an unreadable data.json is backed up before defaults replace it", async () => {
+  const { PluginClass } = loadPluginRuntime();
+  const makePlugin = (files, data) => {
+    const plugin = Object.create(PluginClass.prototype);
+    plugin.manifest = { dir: ".obsidian/plugins/crisp-file-explorer" };
+    plugin.app = { vault: { adapter: {
+      exists: async (path) => files.has(path),
+      read: async (path) => files.get(path),
+      write: async (path, text) => { files.set(path, text); },
+    } } };
+    plugin.loadData = async () => data;
+    return plugin;
+  };
+
+  const damaged = new Map([[".obsidian/plugins/crisp-file-explorer/data.json", "{\"licenseCode\":\"abc"]]);
+  const plugin = makePlugin(damaged, undefined);
+  await plugin.loadSettings();
+  const backups = [...damaged.keys()].filter((path) => path.includes("data.json.unreadable-"));
+  assert.equal(backups.length, 1);
+  assert.equal(damaged.get(backups[0]), "{\"licenseCode\":\"abc");
+  assert.equal(plugin.settings.orbStyle, "default");
+
+  const fresh = new Map();
+  await makePlugin(fresh, null).loadSettings();
+  assert.equal(fresh.size, 0);
+});
+
+test("online license checks are cached for 15 minutes and deduplicated", async () => {
+  const { createLicenseVerificationCache } = loadPluginRuntime();
+  let now = 1000;
+  let calls = 0;
+  const cache = createLicenseVerificationCache(15 * 60 * 1000, () => now);
+  const verify = async () => { calls += 1; return { valid: true }; };
+
+  await Promise.all([
+    cache.verify("code", "crisp-file-explorer", verify),
+    cache.verify("code", "crisp-file-explorer", verify),
+  ]);
+  assert.equal(calls, 1);
+  now += 15 * 60 * 1000;
+  await cache.verify("code", "crisp-file-explorer", verify);
+  assert.equal(calls, 1);
+  now += 1;
+  await cache.verify("code", "crisp-file-explorer", verify);
+  assert.equal(calls, 2);
+  cache.clear();
+  await cache.verify("code", "crisp-file-explorer", verify);
+  assert.equal(calls, 3);
+});
+
+function makeLicensePlugin(PluginClass, context, verdicts) {
+  const calls = [];
+  context.verifyLicenseCode = async (code, id, skipOnline) => {
+    calls.push(skipOnline ? "local" : "online");
+    return skipOnline ? verdicts.local : verdicts.online;
+  };
+  const plugin = Object.create(PluginClass.prototype);
+  Object.assign(plugin, {
+    licensed: false,
+    layoutReady: true,
+    licenseCheckSeq: 0,
+    unloading: false,
+    runtimeStarted: false,
+    settings: { licenseCode: "code" },
+    controllers: new Map(),
+    folderBrowsers: new Map(),
+    enabledDocuments: new Set(),
+    activeRevealRunId: 0,
+    activeRevealTimers: [],
+    app: { workspace: { containerEl: { ownerDocument: { body: { classList: { add() {}, remove() {} } } } } } },
+  });
+  plugin.started = 0;
+  plugin.startRuntime = function () { this.started += 1; this.runtimeStarted = true; };
+  return { plugin, calls };
+}
+
+test("the whole plugin stays off until the license verifies", async () => {
+  const { PluginClass, context } = loadPluginRuntime();
+  const { plugin } = makeLicensePlugin(PluginClass, context, { local: { valid: false, reason: "授权签名无效" } });
+
+  const result = await plugin.refreshLicense({ online: true });
+
+  assert.equal(result.valid, false);
+  assert.equal(plugin.licensed, false);
+  assert.equal(plugin.started, 0);
+  let frames = 0;
+  context.requestAnimationFrame = () => { frames += 1; return 1; };
+  plugin.scheduleRefresh({ immediate: true });
+  assert.equal(frames, 0);
+  assert.equal(plugin.enhanceFileExplorers().size, 0);
+  let menuItems = 0;
+  plugin.addCrispRailMenuItem({ addItem() { menuItems += 1; } }, { path: "a.md" });
+  assert.equal(menuItems, 0);
+});
+
+test("a valid license starts the runtime and an explicit server denial stops it", async () => {
+  const { PluginClass, context } = loadPluginRuntime();
+  const { plugin, calls } = makeLicensePlugin(PluginClass, context, {
+    local: { valid: true, payload: {} },
+    online: { valid: false, reason: "设备数已达上限" },
+  });
+  let destroyed = 0;
+  plugin.controllers.set("c", { destroy() { destroyed += 1; } });
+
+  const result = await plugin.refreshLicense({ online: true });
+
+  assert.deepEqual(calls, ["local", "online"]);
+  assert.equal(plugin.started, 1);
+  assert.equal(result.valid, false);
+  assert.equal(plugin.licensed, false);
+  assert.equal(destroyed, 1);
+  assert.equal(plugin.controllers.size, 0);
+});
+
+test("an empty license code never starts the runtime", async () => {
+  const { PluginClass, context } = loadPluginRuntime();
+  const { plugin, calls } = makeLicensePlugin(PluginClass, context, {});
+  plugin.settings.licenseCode = "";
+
+  const result = await plugin.refreshLicense({ online: true });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(calls, []);
+  assert.equal(plugin.started, 0);
+});

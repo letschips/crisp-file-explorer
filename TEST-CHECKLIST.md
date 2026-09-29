@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.4.3 测试清单
+# Crisp File Explorer v0.4.4 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,10 +6,11 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.4.3`。
+- [ ] `manifest.json` 版本为 `0.4.4`。
 - [ ] `assets/` 中不存在未引用的旧素材。
 - [ ] `main.js`、`styles.css` 和资源文件不包含本机绝对路径。
 - [ ] 新版授权码激活成功，旧版授权码被拒绝。
+- [ ] 清空授权码后轨道、小球与双栏立即消失，文件浏览器恢复原生外观；重新粘贴授权码后即时恢复。
 
 ## 主窗口回归
 

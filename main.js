@@ -58,7 +58,50 @@ async function importEd25519PublicKey(pem) {
   );
 }
 
-async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explorer", skipOnline = false) {
+const LICENSE_CACHE_TTL_MS = 15 * 60 * 1000;
+
+function createLicenseVerificationCache(ttlMs, now = Date.now) {
+  const resolved = new Map();
+  const inFlight = new Map();
+  return {
+    verify(licenseCode, targetPluginId, verifier) {
+      const key = `${targetPluginId}\u0000${licenseCode}`;
+      const cached = resolved.get(key);
+      if (cached && cached.expiresAt >= now()) return Promise.resolve(cached.result);
+      const pending = inFlight.get(key);
+      if (pending) return pending;
+      const operation = verifier().then((result) => {
+        resolved.set(key, { expiresAt: now() + Math.max(0, ttlMs), result });
+        return result;
+      }).finally(() => {
+        inFlight.delete(key);
+      });
+      inFlight.set(key, operation);
+      return operation;
+    },
+    clear() {
+      resolved.clear();
+      inFlight.clear();
+    },
+  };
+}
+
+const licenseVerificationCache = createLicenseVerificationCache(LICENSE_CACHE_TTL_MS);
+
+function clearLicenseVerificationCache() {
+  licenseVerificationCache.clear();
+}
+
+// Online checks are cached per session for 15 minutes; signature-only checks are never cached.
+function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explorer", skipOnline = false) {
+  const trimmed = (licenseCode || "").trim();
+  if (skipOnline) return verifyLicenseCodeUncached(trimmed, targetPluginId, true);
+  return licenseVerificationCache.verify(trimmed, targetPluginId, () => (
+    verifyLicenseCodeUncached(trimmed, targetPluginId, false)
+  ));
+}
+
+async function verifyLicenseCodeUncached(licenseCode, targetPluginId = "crisp-file-explorer", skipOnline = false) {
   const trimmed = (licenseCode || "").trim();
   if (!trimmed) return { valid: false, reason: "授权码为空" };
   const parts = trimmed.split(".");
@@ -2062,6 +2105,18 @@ class CrispAudio {
         this.playTone({ type: "triangle", frequency: pitch(3200), frequencyEnd: pitch(2400), duration: 0.008, release: 0.008, volume: 0.022 });
       } else if (resolvedStyle === "bubble") {
         this.playTone({ type: "sine", frequency: pitch(350), frequencyEnd: pitch(920), duration: 0.045, release: 0.035, volume: 0.024 });
+      } else if (resolvedStyle === "bounce") {
+        this.playTone({ type: "sine", frequency: pitch(460), frequencyEnd: pitch(280), duration: 0.028, release: 0.024, volume: 0.028 });
+      } else if (resolvedStyle === "thump") {
+        this.playTone({ type: "sine", frequency: pitch(210), frequencyEnd: pitch(120), duration: 0.03, release: 0.03, volume: 0.036 });
+      } else if (resolvedStyle === "pop") {
+        this.playTone({ type: "sine", frequency: pitch(620), frequencyEnd: pitch(1180), duration: 0.018, release: 0.016, volume: 0.024 });
+      } else if (resolvedStyle === "chime") {
+        this.playTone({ type: "sine", frequency: pitch(1568), duration: 0.03, release: 0.06, volume: 0.016 });
+      } else if (resolvedStyle === "spark") {
+        this.playTone({ type: "triangle", frequency: pitch(2400), frequencyEnd: pitch(3400), duration: 0.012, release: 0.014, volume: 0.016 });
+      } else if (resolvedStyle === "bell") {
+        this.playTone({ type: "sine", frequency: pitch(1318.51), duration: 0.035, release: 0.08, volume: 0.016 });
       } else {
         this.playTone({ type: "triangle", frequency: pitch(680), duration: 0.012, release: 0.012, volume: 0.02 });
       }
@@ -2093,6 +2148,18 @@ class CrispAudio {
         this.playTone({ type: "triangle", frequency: 2400, frequencyEnd: 1200, duration: 0.03, release: 0.02, volume: 0.024 });
       } else if (resolvedStyle === "bubble") {
         this.playTone({ type: "sine", frequency: 280, frequencyEnd: 720, duration: 0.08, release: 0.05, volume: 0.028 });
+      } else if (resolvedStyle === "bounce") {
+        this.playTone({ type: "sine", frequency: 380, frequencyEnd: 200, duration: 0.07, release: 0.05, volume: 0.03 });
+      } else if (resolvedStyle === "thump") {
+        this.playTone({ type: "sine", frequency: 160, frequencyEnd: 80, duration: 0.08, release: 0.06, volume: 0.04 });
+      } else if (resolvedStyle === "pop") {
+        this.playTone({ type: "sine", frequency: 520, frequencyEnd: 1320, duration: 0.05, release: 0.04, volume: 0.026 });
+      } else if (resolvedStyle === "chime") {
+        this.playTone({ type: "sine", frequency: 1046.5, frequencyEnd: 1568, duration: 0.07, release: 0.12, volume: 0.02 });
+      } else if (resolvedStyle === "spark") {
+        this.playTone({ type: "triangle", frequency: 1800, frequencyEnd: 3200, duration: 0.05, release: 0.04, volume: 0.018 });
+      } else if (resolvedStyle === "bell") {
+        this.playTone({ type: "sine", frequency: 987.77, frequencyEnd: 1318.51, duration: 0.08, release: 0.16, volume: 0.02 });
       } else {
         this.playTone({ type: "sine", frequency: 320, frequencyEnd: 180, duration: 0.06, release: 0.05, volume: 0.026 });
       }
@@ -2825,7 +2892,7 @@ class FileExplorerRail {
           && currentSide !== previousSide
           && !prefersReducedMotion.matches
         ) {
-          const dragProgress = index / Math.max(1, this.ticks.length - 1);
+          const dragProgress = index / Math.max(1, this.tickMarks.length - 1);
           this.plugin.audio.tick(
             resolveSoundStyle(this.plugin.settings.soundStyle, this.orb.dataset.orbStyle),
             dragProgress,
@@ -3180,6 +3247,20 @@ class FileExplorerRail {
   }
 }
 
+const LICENSE_PLUGIN_ID = "crisp-file-explorer";
+const UNLICENSED_STATUS = "❌ 未激活（Crisp File Explorer 需激活后使用，请输入授权码）";
+
+function describeLicenseStatus(result) {
+  if (!result || !result.valid || !result.payload) {
+    return `❌ 未激活（${(result && result.reason) || "授权码无效"}）`;
+  }
+  const { userName, expiresAt } = result.payload;
+  const details = [];
+  if (userName) details.push(`授权给: ${userName}`);
+  details.push(`到期时间: ${typeof expiresAt === "string" && expiresAt ? expiresAt.split("T")[0] : "长期有效"}`);
+  return `✅ 已激活（${details.join("，")}）`;
+}
+
 function renderAboutCard(container, pluginName, description) {
   const document = container.ownerDocument;
   const card = document.createElement("section");
@@ -3263,43 +3344,59 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
       .setDesc("正在验证授权状态...");
 
     if (this.plugin.settings.licenseCode) {
-      verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-file-explorer").then((verifyRes) => {
-        if (verifyRes.valid && verifyRes.payload) {
-          statusSetting.setDesc(
-            `✅ 已激活（授权给: ${verifyRes.payload.userName}，到期时间: ${verifyRes.payload.expiresAt.split("T")[0]}）`,
-          );
-        } else {
-          statusSetting.setDesc(
-            `❌ 未激活（${verifyRes.reason || "授权码无效"}）`,
-          );
+      const wasLicensed = this.plugin.licensed;
+      this.plugin.refreshLicense({ online: true }).then((verifyRes) => {
+        if (wasLicensed !== this.plugin.licensed) {
+          this.display();
+          return;
         }
+        statusSetting.setDesc(describeLicenseStatus(verifyRes));
+      }).catch(() => {
+        statusSetting.setDesc("❌ 未激活（授权状态读取失败，请重新验证）");
       });
     } else {
-      statusSetting.setDesc("❌ 未激活（仅可使用默认足球小球，激活可解锁全套 3D 动漫小球）");
+      statusSetting.setDesc(UNLICENSED_STATUS);
     }
 
     new Setting(licenseGroup)
       .setName("输入授权码")
-      .setDesc("粘贴购买获取的 Crisp Suite 授权字符串进行离线激活。")
+      .setDesc("粘贴购买获取的 Crisp Suite 授权码。激活时会联网校验设备数量，网络不可用时降级为本地签名验证；结果在当前会话缓存 15 分钟。")
       .addText((text) => text
         .setPlaceholder("粘贴 Crisp 授权码...")
         .setValue(this.plugin.settings.licenseCode)
         .onChange(async (value) => {
+          clearLicenseVerificationCache();
           this.plugin.settings.licenseCode = value.trim();
           await this.plugin.saveSettings();
+          const wasLicensed = this.plugin.licensed;
+          await this.plugin.refreshLicense({ online: false });
+          if (wasLicensed !== this.plugin.licensed) this.display();
         }))
       .addButton((button) => button
         .setButtonText("激活 / 重新验证")
         .setCta()
         .onClick(async () => {
-          const result = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-file-explorer");
+          clearLicenseVerificationCache();
+          const result = await this.plugin.refreshLicense({ online: true });
           if (result.valid && result.payload) {
-            new Notice(`🎉 Crisp File Explorer 激活成功！欢迎使用，${result.payload.userName}`);
+            new Notice(result.payload.userName
+              ? `🎉 Crisp File Explorer 激活成功！欢迎使用，${result.payload.userName}`
+              : "🎉 Crisp File Explorer 激活成功！");
             this.display();
           } else {
             new Notice(`❌ 激活失败: ${result.reason}`);
+            this.display();
           }
         }));
+
+    if (!this.plugin.licensed) {
+      renderAboutCard(
+        containerEl,
+        "Crisp File Explorer",
+        "用更清晰、更有质感的文件导航，让笔记库浏览轻快而有序。"
+      );
+      return;
+    }
 
     // 1. Orb & Visual Appearance Group (Open by default)
     const orbBody = createGroup(
@@ -3362,17 +3459,6 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
             const selectedStyle = normalizeOrbStyle(value);
             this.plugin.settings.orbStyle = selectedStyle;
             this.plugin.updateOrbStyles();
-            if (selectedStyle !== "soccer") {
-              const check = await verifyLicenseCode(this.plugin.settings.licenseCode, "crisp-file-explorer", true);
-              if (!check.valid) {
-                new Notice("🔒 切换其它小球属于 Crisp 激活用户专属功能（未激活仅可使用默认足球）");
-                this.plugin.settings.orbStyle = "soccer";
-                this.plugin.updateOrbStyles();
-                await this.plugin.saveSettings();
-                this.display();
-                return;
-              }
-            }
             await this.plugin.saveSettings();
           })
       );
@@ -4461,40 +4547,117 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.runtimeStarted = false;
     this.observer = null;
     this.enabledDocuments = new Set();
+    // Every feature requires activation; the runtime starts only after the license passes.
+    this.licensed = false;
+    this.layoutReady = false;
+    this.licenseCheckSeq = 0;
     await this.loadSettings();
     crispRegisterIcons();
     this.addSettingTab(new CrispFileExplorerSettingTab(this.app, this));
 
-    this.enableDocument(getOwnerDocument(this.app.workspace.containerEl));
     this.app.workspace.onLayoutReady(() => {
-      if (!this.unloading) this.startRuntime();
+      this.layoutReady = true;
+      if (this.unloading) return;
+      this.refreshLicense({ online: true, notify: true }).catch((error) => {
+        console.debug("Crisp File Explorer license check failed", error);
+      });
     });
 
     this.addCommand({
       id: "toggle-dual-pane",
       name: "切换轻量双栏浏览",
-      callback: () => this.setDualPaneEnabled(!this.settings.dualPaneEnabled),
+      callback: () => this.requireLicense(() => this.setDualPaneEnabled(!this.settings.dualPaneEnabled)),
     });
 
     this.addCommand({
       id: "toggle-folder-marks",
       name: "切换文件夹刻度",
-      callback: async () => {
+      callback: () => this.requireLicense(async () => {
         this.settings.includeFolders = !this.settings.includeFolders;
         await this.saveSettings();
         this.scheduleRefresh();
-      },
+      }),
     });
 
     this.addCommand({
       id: "toggle-tick-sound",
       name: "切换拖动音效",
-      callback: async () => {
+      callback: () => this.requireLicense(async () => {
         this.settings.soundEnabled = !this.settings.soundEnabled;
         await this.saveSettings();
-      },
+      }),
     });
 
+  }
+
+  requireLicense(action) {
+    if (!this.licensed) {
+      new Notice("🔒 Crisp File Explorer 未激活，请在插件设置中输入授权码");
+      return undefined;
+    }
+    return action();
+  }
+
+  // Local signature check decides immediately; the online device check (cached 15 min)
+  // can still revoke it. Network outages keep the local result, as before.
+  async refreshLicense({ online = true, notify = false } = {}) {
+    const seq = ++this.licenseCheckSeq;
+    const code = this.settings.licenseCode;
+    const local = code
+      ? await verifyLicenseCode(code, LICENSE_PLUGIN_ID, true)
+      : { valid: false, reason: "授权码为空" };
+    if (this.unloading || seq !== this.licenseCheckSeq) return local;
+    if (!local.valid) {
+      this.setLicensed(false);
+      if (notify) new Notice(`🔒 Crisp File Explorer 未激活（${local.reason}），请在插件设置中输入授权码`);
+      return local;
+    }
+    this.setLicensed(true);
+    if (!online) return local;
+
+    const remote = await verifyLicenseCode(code, LICENSE_PLUGIN_ID);
+    if (this.unloading || seq !== this.licenseCheckSeq) return remote;
+    if (!remote.valid) {
+      this.setLicensed(false);
+      if (notify) new Notice(`🔒 Crisp File Explorer 授权未通过（${remote.reason}）`);
+    }
+    return remote;
+  }
+
+  setLicensed(next) {
+    const licensed = Boolean(next);
+    if (this.licensed === licensed) return;
+    this.licensed = licensed;
+    if (!licensed) {
+      this.teardownViews();
+      return;
+    }
+    this.enableDocument(getOwnerDocument(this.app.workspace.containerEl));
+    if (!this.layoutReady || this.unloading) return;
+    if (this.runtimeStarted) this.scheduleRefresh({ immediate: true, reveal: true });
+    else this.startRuntime();
+  }
+
+  teardownViews() {
+    if (this.refreshFrame) cancelAnimationFrame(this.refreshFrame);
+    this.refreshFrame = null;
+    this.refreshQueued = false;
+    this.pendingRefreshReveal = false;
+    this.pendingRefreshImmediate = false;
+    this.pendingRefreshTransition = false;
+    this.activeRevealRunId += 1;
+    this.cancelActiveRevealFrame();
+    this.clearActiveRevealTimers();
+    for (const ownerDocument of this.enabledDocuments || []) {
+      if (ownerDocument && ownerDocument.body) {
+        ownerDocument.body.classList.remove("crisp-file-explorer-enabled");
+      }
+    }
+    this.enabledDocuments?.clear();
+    for (const controller of this.controllers?.values() || []) controller.destroy();
+    this.controllers?.clear();
+    for (const browser of this.folderBrowsers?.values() || []) browser.destroy();
+    this.folderBrowsers?.clear();
   }
 
   async setDualPaneEnabled(enabled) {
@@ -4520,7 +4683,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   }
 
   startRuntime() {
-    if (this.runtimeStarted || this.unloading) return;
+    if (this.runtimeStarted || this.unloading || !this.licensed) return;
     this.runtimeStarted = true;
     this.openMarkdownPaths = this.getOpenMarkdownPaths();
     this.enhanceFileExplorers();
@@ -4595,38 +4758,36 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
 
   onunload() {
     this.unloading = true;
-    if (this.refreshFrame) cancelAnimationFrame(this.refreshFrame);
-    this.refreshFrame = null;
-    this.refreshQueued = false;
-    this.pendingRefreshReveal = false;
-    this.pendingRefreshImmediate = false;
-    this.pendingRefreshTransition = false;
-    this.activeRevealRunId += 1;
-    this.cancelActiveRevealFrame();
-    this.clearActiveRevealTimers();
     const pendingSave = this.flushActivitySave();
     if (pendingSave) pendingSave.catch((error) => console.debug("Crisp File Explorer final save failed", error));
     this.audio.destroy().catch((error) => console.debug("Crisp File Explorer audio cleanup failed", error));
-    for (const ownerDocument of this.enabledDocuments) {
-      if (ownerDocument && ownerDocument.body) {
-        ownerDocument.body.classList.remove("crisp-file-explorer-enabled");
-      }
-    }
-    this.enabledDocuments.clear();
-    for (const controller of this.controllers.values()) {
-      controller.destroy();
-    }
-    this.controllers.clear();
-    for (const browser of this.folderBrowsers?.values() || []) browser.destroy();
-    this.folderBrowsers?.clear();
+    this.teardownViews();
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = await this.loadData();
+    // loadData() returns undefined (not null) when data.json exists but cannot be parsed.
+    // Keep a copy before the first save overwrites it with defaults.
+    if (data === undefined) await this.backupUnreadableData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     this.settings.orbStyle = normalizeOrbStyle(this.settings.orbStyle);
     this.settings.soundStyle = normalizeSoundStyle(this.settings.soundStyle);
     this.settings.activity = normalizeActivity(this.settings.activity);
     this.ensureTodayActivity();
+  }
+
+  async backupUnreadableData() {
+    try {
+      const adapter = this.app.vault.adapter;
+      const dataPath = normalizePath(`${this.manifest.dir}/data.json`);
+      if (!(await adapter.exists(dataPath))) return;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupPath = normalizePath(`${this.manifest.dir}/data.json.unreadable-${stamp}`);
+      await adapter.write(backupPath, await adapter.read(dataPath));
+      new Notice(`Crisp File Explorer 设置文件无法读取，已恢复默认设置。原文件已备份为 ${backupPath.split("/").pop()}`);
+    } catch (error) {
+      console.error("Crisp File Explorer could not back up unreadable data.json", error);
+    }
   }
 
   saveSettings() {
@@ -4658,7 +4819,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   }
 
   addCrispRailMenuItem(menu, file) {
-    if (!menu || typeof menu.addItem !== "function" || !file || !file.path || Array.isArray(file.children)) return;
+    if (this.licensed === false || !menu || typeof menu.addItem !== "function" || !file || !file.path || Array.isArray(file.children)) return;
     const pinned = normalizeActivity(this.settings && this.settings.activity).pinnedPaths.includes(file.path);
     menu.addItem((item) => {
       item
@@ -4710,7 +4871,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   }
 
   recordFileActivity(file) {
-    if (!file || !file.path) return;
+    if (!file || !file.path || this.licensed === false) return;
 
     this.ensureTodayActivity();
     const path = file.path;
@@ -4908,7 +5069,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   }
 
   scheduleActiveReveal(options = {}) {
-    if (this.unloading) return;
+    if (this.unloading || this.licensed === false) return;
     if (this.isInteractionLocked()) {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
@@ -5044,7 +5205,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
   }
 
   scheduleRefresh(options = {}) {
-    if (this.unloading) return;
+    if (this.unloading || this.licensed === false) return;
     this.pendingRefreshReveal = this.pendingRefreshReveal || Boolean(options.reveal);
     this.pendingRefreshImmediate = this.pendingRefreshImmediate || Boolean(options.immediate);
     this.pendingRefreshTransition = this.pendingRefreshTransition || Boolean(options.transition);
@@ -5101,7 +5262,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
 
   enhanceFileExplorers() {
     const createdControllers = new Set();
-    if (this.unloading) return createdControllers;
+    if (this.unloading || this.licensed === false) return createdControllers;
     const containers = this.getFileExplorerContainers();
 
     if (!this.folderBrowsers) this.folderBrowsers = new Map();
