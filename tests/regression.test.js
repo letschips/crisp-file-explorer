@@ -2781,3 +2781,45 @@ test("an empty license code never starts the runtime", async () => {
   assert.deepEqual(calls, []);
   assert.equal(plugin.started, 0);
 });
+
+test("a save that Obsidian silently drops is flagged instead of reported as done", async () => {
+  const { PluginClass } = loadPluginRuntime();
+  const files = new Map();
+  const dataPath = ".obsidian/plugins/crisp-file-explorer/data.json";
+  const plugin = Object.create(PluginClass.prototype);
+  plugin.manifest = { dir: ".obsidian/plugins/crisp-file-explorer" };
+  plugin.app = { vault: { adapter: {
+    exists: async (path) => files.has(path),
+    read: async (path) => { if (!files.has(path)) throw new Error("ENOENT"); return files.get(path); },
+    write: async (path, text) => { files.set(path, text); },
+  } } };
+  plugin.saveQueue = Promise.resolve();
+  plugin.settings = { activity: { todayPaths: ["a.md"] } };
+  plugin.saveData = async () => {};
+  await plugin.saveSettings();
+  assert.equal(plugin.saveFailed, true);
+  plugin.saveData = async (value) => { files.set(dataPath, JSON.stringify(value, null, 2)); };
+  await plugin.saveSettings();
+  assert.equal(plugin.saveFailed, false);
+});
+
+test("an unreadable data.json that cannot be backed up is never overwritten", async () => {
+  const { PluginClass } = loadPluginRuntime();
+  const dataPath = ".obsidian/plugins/crisp-file-explorer/data.json";
+  const files = new Map([[dataPath, "{ broken"]]);
+  const plugin = Object.create(PluginClass.prototype);
+  plugin.manifest = { dir: ".obsidian/plugins/crisp-file-explorer" };
+  plugin.app = { vault: { adapter: {
+    exists: async (path) => files.has(path),
+    read: async (path) => files.get(path),
+    write: async (path, text) => { if (path.includes("unreadable")) throw new Error("EACCES"); files.set(path, text); },
+  } } };
+  plugin.loadData = async () => undefined;
+  let writes = 0;
+  plugin.saveData = async () => { writes += 1; };
+  plugin.saveQueue = Promise.resolve();
+  await plugin.loadSettings();
+  await plugin.saveSettings();
+  assert.equal(writes, 0);
+  assert.equal(files.get(dataPath), "{ broken");
+});
