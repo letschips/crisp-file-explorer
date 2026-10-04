@@ -13,6 +13,8 @@ function loadPluginRuntime(overrides = {}) {
     indexRangeAround: typeof indexRangeAround === "function" ? indexRangeAround : undefined,
     mutationTouchesFileTree: typeof mutationTouchesFileTree === "function" ? mutationTouchesFileTree : undefined,
     hasStableTickTopology: typeof hasStableTickTopology === "function" ? hasStableTickTopology : undefined,
+    buildTickMarks: typeof buildTickMarks === "function" ? buildTickMarks : undefined,
+    fitTickToContent: typeof fitTickToContent === "function" ? fitTickToContent : undefined,
     reconcileMeasuredItemMotion: typeof reconcileMeasuredItemMotion === "function" ? reconcileMeasuredItemMotion : undefined,
     normalizeActivity: typeof normalizeActivity === "function" ? normalizeActivity : undefined,
     rankSmartMagnetPaths: typeof rankSmartMagnetPaths === "function" ? rankSmartMagnetPaths : undefined,
@@ -380,6 +382,8 @@ test("cold-open motion uses the file explorer owner window and clears cleanly", 
     updateRailLineBounds() {},
     syncTickElements() {},
     syncDragPositionAfterMeasure: () => false,
+    scheduleRefresh() {},
+    syncContentObservation() {},
     ensureItemVisible() {},
     render() {},
     requestFrame() {},
@@ -589,6 +593,8 @@ test("a retained folder target still offsets its label when no file is active", 
     updateRailLineBounds() {},
     syncTickElements() {},
     syncDragPositionAfterMeasure: () => false,
+    scheduleRefresh() {},
+    syncContentObservation() {},
     render() {},
     requestFrame() {},
   };
@@ -1096,6 +1102,8 @@ test("file-tree remeasurement keeps stable active-row motion applied", () => {
     updateRailLineBounds() {},
     syncTickElements() {},
     syncDragPositionAfterMeasure: () => false,
+    scheduleRefresh() {},
+    syncContentObservation() {},
     ensureItemVisible() {},
     render() {},
     requestFrame() {},
@@ -1804,6 +1812,7 @@ test("a controller rebinds observers after Obsidian adopts its file tree into an
     mutationObserver: { disconnect() { disconnected += 1; } },
     mutationDebounceTimer: null,
     scheduleRefresh() {},
+    syncContentObservation() {},
     plugin: {
       enableDocument(ownerDocument) { enabledDocuments.push(ownerDocument); },
     },
@@ -2822,4 +2831,116 @@ test("an unreadable data.json that cannot be backed up is never overwritten", as
   await plugin.saveSettings();
   assert.equal(writes, 0);
   assert.equal(files.get(dataPath), "{ broken");
+});
+
+test("tick marks stay within the rail line: no lone tick above the first or below the last item", () => {
+  const { buildTickMarks } = loadPluginRuntime();
+  const items = [
+    { center: 120, type: "folder" },
+    { center: 147, type: "folder" },
+    { center: 175, type: "file" },
+  ];
+  const ticks = buildTickMarks(items);
+  assert.ok(ticks.length > items.length, "between-row ticks are kept");
+  for (const tick of ticks) {
+    assert.ok(tick.y >= items[0].center, `tick at ${tick.y} sits above the rail start`);
+    assert.ok(tick.y <= items[items.length - 1].center, `tick at ${tick.y} sits below the rail end`);
+  }
+});
+
+test("between-row ticks know both neighbouring items, so they can respect either row's content", () => {
+  const { buildTickMarks } = loadPluginRuntime();
+  const ticks = buildTickMarks([{ center: 100, type: "folder" }, { center: 130, type: "file" }]);
+  const shorts = ticks.filter((tick) => tick.kind === "short");
+  assert.ok(shorts.length > 0);
+  for (const tick of shorts) {
+    assert.equal(tick.prevItemIndex, 0);
+    assert.equal(tick.nextItemIndex, 1);
+  }
+});
+
+test("a bulging tick never reaches into the row content, and resting ticks are unchanged", () => {
+  const { fitTickToContent } = loadPluginRuntime();
+  // Neighbour of the orb: bulged 14px right and widened to 24px; folder chevron box starts at 25px.
+  const bulged = fitTickToContent(14.3, 23.5, 18, 12, 25);
+  assert.ok(12 + bulged.x + bulged.width <= Math.max(12 + 18, 25 - 3) + 1e-9, "right end stays clear of the chevron");
+  assert.ok(bulged.width >= 18, "never shorter than at rest");
+  assert.ok(bulged.x >= 0);
+  // At rest nothing moves, even when the resting tick is longer than the gap allows.
+  assert.deepEqual({ ...fitTickToContent(0, 18, 18, 12, 25) }, { x: 0, width: 18 });
+  // Plenty of room: the bulge is left alone.
+  assert.deepEqual({ ...fitTickToContent(10, 26, 24, 12, 90) }, { x: 10, width: 26 });
+  // Unknown content edge: unchanged.
+  assert.deepEqual({ ...fitTickToContent(10, 26, 24, 12, undefined) }, { x: 10, width: 26 });
+});
+
+test("the tree content box is observed so row height changes trigger a remeasure, and re-attached when replaced", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  const rail = { classList: fakeClassList() };
+  rail.classList.add("crisp-fe-rail");
+  const first = { classList: fakeClassList() };
+  const second = { classList: fakeClassList() };
+  const observed = new Set();
+  const controller = {
+    container: { children: [first, rail] },
+    resizeObserver: {
+      observe(el) { observed.add(el); },
+      unobserve(el) { observed.delete(el); },
+    },
+    observedContent: null,
+  };
+  const sync = () => FileExplorerRail.prototype.syncContentObservation.call(controller);
+
+  sync();
+  assert.ok(observed.has(first), "the tree content, not the rail, is observed");
+  assert.ok(!observed.has(rail));
+
+  controller.container.children = [second, rail];
+  sync();
+  assert.ok(observed.has(second) && !observed.has(first), "a replaced tree is re-attached");
+
+  sync();
+  assert.equal(observed.size, 1, "an unchanged tree is not observed twice");
+});
+
+test("resting ticks keep a gap before the row content, never shrinking below a visible minimum", () => {
+  const { buildTickMarks } = loadPluginRuntime();
+  const railX = 12;
+  const items = [
+    { center: 20, type: "folder", contentLeft: 27 }, // chevron close to the rail
+    { center: 48, type: "file", contentLeft: 45 },   // label far from the rail
+    { center: 76, type: "folder", contentLeft: 14 }, // pathological: content almost on the rail
+  ];
+  const ticks = buildTickMarks(items, railX);
+  const folder = ticks.find((tick) => tick.itemIndex === 0);
+  const file = ticks.find((tick) => tick.itemIndex === 1);
+  const cramped = ticks.find((tick) => tick.itemIndex === 2);
+  assert.ok(railX + folder.maxWidth <= 27 - 3, "folder tick stops short of its chevron");
+  assert.equal(file.maxWidth >= 24, true, "a file tick with room keeps its full length");
+  assert.ok(cramped.maxWidth >= 6, "a tick never disappears");
+  const between = ticks.filter((tick) => tick.kind === "short" && tick.prevItemIndex === 0);
+  assert.ok(between.every((tick) => railX + tick.maxWidth <= 27 - 3), "between-row ticks respect the nearer row");
+});
+
+test("auto-expanding a folder while dragging opens it in one step, without the core slide animation", () => {
+  const { PluginClass } = loadPluginRuntime();
+  const plugin = Object.create(PluginClass.prototype);
+  const calls = [];
+  plugin.folderBrowsers = new Map();
+  plugin.app = {
+    workspace: {
+      getLeavesOfType: () => [{
+        view: {
+          fileItems: {
+            folder: { collapsed: true, setCollapsed: (collapsed, animate) => { calls.push([collapsed, animate]); } },
+          },
+        },
+      }],
+    },
+  };
+
+  assert.equal(plugin.expandFolderInExplorers("folder"), true);
+  // An animated expand lays out the new rows before the rows below move, so the
+  // rail measures both sets on top of each other for a few frames (ghosting).
+  assert.deepEqual(calls, [[false, false]]);
 });

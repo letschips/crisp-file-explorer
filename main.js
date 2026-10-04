@@ -226,6 +226,9 @@ const MAX_FRAME_DT = 1 / 30;
 const SCROLL_REVEAL_MARGIN = 64;
 const TICK_SIDE_HYSTERESIS = 0.75; // 精准的滞后判断，避免抖动时反复触发音效
 const RAIL_LINE_PADDING = 0;
+const DEFAULT_RAIL_X = 12;
+const TICK_CONTENT_GAP = 3;
+const MIN_TICK_WIDTH = 6;
 const RAIL_FOCUS_HEIGHT = 192;
 const INTERACTION_LOCK_MS = 180;
 const ACTIVE_REVEAL_RETRY_DELAYS = [120, 300, 700];
@@ -1908,8 +1911,9 @@ function indexRangeAround(items, y, radius, centerKey = "center") {
 }
 
 function getTickBaseWidth(tick) {
-  if (tick.kind !== "long") return TICK_SHORT_WIDTH;
-  return tick.isFile === false ? TICK_FOLDER_WIDTH : TICK_LONG_WIDTH;
+  let width = TICK_SHORT_WIDTH;
+  if (tick.kind === "long") width = tick.isFile === false ? TICK_FOLDER_WIDTH : TICK_LONG_WIDTH;
+  return Number.isFinite(tick.maxWidth) ? Math.min(width, tick.maxWidth) : width;
 }
 
 function mutationTouchesFileTree(mutations) {
@@ -1920,16 +1924,25 @@ function mutationTouchesFileTree(mutations) {
   });
 }
 
-function buildTickMarks(items) {
+function buildTickMarks(items, railX = DEFAULT_RAIL_X) {
   const ticks = [];
   if (!items.length) return ticks;
 
-  const firstGap = items.length > 1 ? items[1].center - items[0].center : 0;
-  const lastGap = items.length > 1 ? items[items.length - 1].center - items[items.length - 2].center : 0;
-  if (firstGap > 0) {
-    ticks.push({ y: items[0].center - firstGap / 3, kind: "short" });
-  }
+  // Longest a resting tick may be and still leave a gap before the row
+  // content; between-row ticks take the nearer of their two rows.
+  const maxWidthFor = (...indices) => {
+    let width;
+    for (const index of indices) {
+      const contentLeft = items[index] && items[index].contentLeft;
+      if (!Number.isFinite(contentLeft)) continue;
+      const room = Math.max(MIN_TICK_WIDTH, contentLeft - TICK_CONTENT_GAP - railX);
+      width = width === undefined ? room : Math.min(width, room);
+    }
+    return width;
+  };
 
+  // Ticks live on the rail line, which runs from the first item centre to the
+  // last; nothing is drawn above or below it.
   for (let index = 0; index < items.length; index += 1) {
     ticks.push({
       y: items[index].center,
@@ -1939,6 +1952,7 @@ function buildTickMarks(items) {
       isToday: Boolean(items[index].today),
       isMagnet: Boolean(items[index].magnet),
       isPinned: Boolean(items[index].pinned),
+      maxWidth: maxWidthFor(index),
     });
 
     const next = items[index + 1];
@@ -1947,15 +1961,85 @@ function buildTickMarks(items) {
     const gap = next.center - items[index].center;
     if (gap >= 22) {
       ticks.push(
-        { y: items[index].center + gap / 3, kind: "short" },
-        { y: items[index].center + (gap * 2) / 3, kind: "short" }
+        { y: items[index].center + gap / 3, kind: "short", prevItemIndex: index, nextItemIndex: index + 1, maxWidth: maxWidthFor(index, index + 1) },
+        { y: items[index].center + (gap * 2) / 3, kind: "short", prevItemIndex: index, nextItemIndex: index + 1, maxWidth: maxWidthFor(index, index + 1) }
       );
     }
   }
-  if (lastGap > 0) {
-    ticks.push({ y: items[items.length - 1].center + lastGap / 3, kind: "short" });
-  }
   return ticks;
+}
+
+// Keeps a bulging tick clear of the row content (chevron or label). The
+// resting length is never cut, so the idle ruler looks exactly as before;
+// only the bulge is held back, first in length, then in offset.
+function fitTickToContent(x, width, baseWidth, railX, contentLeft) {
+  if (!Number.isFinite(contentLeft)) return { x, width };
+  const allowedRight = Math.max(railX + baseWidth, contentLeft - TICK_CONTENT_GAP);
+  let excess = railX + x + width - allowedRight;
+  if (excess <= 0) return { x, width };
+  const widthCut = Math.min(excess, Math.max(0, width - baseWidth));
+  excess -= widthCut;
+  const xCut = Math.min(excess, Math.max(0, x));
+  return { x: x - xCut, width: width - widthCut };
+}
+
+function labelShiftFor(rail, index) {
+  const item = rail.items[index];
+  if (!item) return 0;
+  if (rail.isDragging) {
+    const progress = morphProgress(item.center - rail.displayY);
+    return mix(waveOffset(rail.displayY, item.center), ACTIVE_LABEL_TRANSLATE_X, progress);
+  }
+  return item.active || rail.visualActiveIndex === index ? ACTIVE_LABEL_TRANSLATE_X : 0;
+}
+
+// The content edge a tick must stay clear of: its own row's, or for a
+// between-row tick the nearer of its two neighbours, wherever their labels
+// currently sit.
+function tickContentLeft(rail, tick) {
+  const indices = tick.itemIndex !== undefined
+    ? [tick.itemIndex]
+    : [tick.prevItemIndex, tick.nextItemIndex];
+  let left;
+  for (const index of indices) {
+    const item = index === undefined || !rail.items ? undefined : rail.items[index];
+    if (!item || !Number.isFinite(item.contentLeft)) continue;
+    const edge = item.contentLeft + labelShiftFor(rail, index);
+    left = left === undefined ? edge : Math.min(left, edge);
+  }
+  return left;
+}
+
+function findTreeContent(container) {
+  if (!container || !container.children) return null;
+  for (const child of Array.from(container.children)) {
+    if (child.classList && !child.classList.contains("crisp-fe-rail")) return child;
+  }
+  return null;
+}
+
+function measureRowContentLeft(el, containerRect) {
+  if (!el || typeof el.querySelector !== "function" || !containerRect) return undefined;
+  const chevron = el.querySelector(".collapse-icon svg");
+  const label = el.querySelector(".tree-item-inner");
+  let target = null;
+  for (const candidate of [chevron, label]) {
+    if (!candidate || typeof candidate.getBoundingClientRect !== "function") continue;
+    if (candidate.getBoundingClientRect().width > 0) {
+      target = candidate;
+      break;
+    }
+  }
+  if (!target) return undefined;
+  const shift = parseFloat((el.style && el.style.translate) || "") || 0;
+  return target.getBoundingClientRect().left - containerRect.left - shift;
+}
+
+function readRailX(container) {
+  const ownerWindow = getOwnerWindow(container);
+  if (!ownerWindow || typeof ownerWindow.getComputedStyle !== "function") return DEFAULT_RAIL_X;
+  const value = parseFloat(ownerWindow.getComputedStyle(container).getPropertyValue("--crisp-fe-rail-x"));
+  return Number.isFinite(value) ? value : DEFAULT_RAIL_X;
 }
 
 function hasStableTickTopology(previousItems, nextItems, previousTicks, nextTicks) {
@@ -1976,6 +2060,7 @@ function hasStableTickTopology(previousItems, nextItems, previousTicks, nextTick
     const previous = previousTicks[index];
     const next = nextTicks[index];
     if (previous.kind !== next.kind || previous.itemIndex !== next.itemIndex) return false;
+    if (previous.maxWidth !== next.maxWidth) return false;
   }
 
   return true;
@@ -2273,10 +2358,22 @@ class FileExplorerRail {
     this.container.appendChild(this.rail);
     this.container.addEventListener("scroll", this.onScroll, { passive: true });
     this.resizeObserver.observe(this.container);
+    this.syncContentObservation();
     this.mutationObserver.observe(this.container, { childList: true, subtree: true });
 
     this.setEnabled(this.isVisible());
     this.refresh({ reveal: true, immediate: true });
+  }
+
+  // Row heights can change without the scroll box resizing (a row gains a
+  // style, a stylesheet loads late). The tree content box resizes with them,
+  // so it is observed too and re-attached when Obsidian replaces it.
+  syncContentObservation() {
+    const content = findTreeContent(this.container);
+    if (content === this.observedContent) return;
+    if (this.observedContent) this.resizeObserver.unobserve(this.observedContent);
+    this.observedContent = content;
+    if (content) this.resizeObserver.observe(content);
   }
 
   createObservers() {
@@ -2549,6 +2646,7 @@ class FileExplorerRail {
   refresh(options = {}) {
     if (this.destroyed || !isConnectedToOwnerDocument(this.container)) return;
     this.syncOwnerContext();
+    this.syncContentObservation();
     if (!this.isVisible()) {
       this.setEnabled(false);
       return;
@@ -2585,6 +2683,11 @@ class FileExplorerRail {
     }
 
     const rects = candidates.map(({ el }) => el.getBoundingClientRect());
+    // Read where each row's content starts (chevron, else label) in the same
+    // layout pass, minus any label shift currently applied, so bulging ticks
+    // can stop short of it.
+    const contentLefts = candidates.map(({ el }) => measureRowContentLeft(el, containerRect));
+    this.railX = readRailX(this.container);
     const nextItems = [];
 
     for (let index = 0; index < candidates.length; index += 1) {
@@ -2600,7 +2703,8 @@ class FileExplorerRail {
       const magnet = type === "file" && path && (pinned || frequentPaths.has(path));
       const center = rect.top - containerRect.top + this.container.scrollTop + rect.height / 2;
 
-      nextItems.push({ el, center, path, type, active, today, magnet, pinned, renderedX: undefined });
+      const contentLeft = contentLefts[index];
+      nextItems.push({ el, center, contentLeft, path, type, active, today, magnet, pinned, renderedX: undefined });
     }
 
     for (const item of nextItems) {
@@ -2628,7 +2732,7 @@ class FileExplorerRail {
       }
     }
 
-    const nextTickMarks = buildTickMarks(nextItems);
+    const nextTickMarks = buildTickMarks(nextItems, this.railX);
     const preserveTickMotion = hasStableTickTopology(
       previousItems,
       nextItems,
@@ -2900,8 +3004,16 @@ class FileExplorerRail {
       const wave = tick.itemIndex === undefined || prefersReducedMotion.matches ? 0 : gaussianInfluence(distance, BULGE_SIGMA);
       const baseWidth = getTickBaseWidth(tick);
       const waveProgress = Math.max(progress, wave * 0.76);
-      const width = mix(baseWidth, LINE_WIDTH, waveProgress);
-      const x = mix(waveOffset(this.displayY, tick.y), DOT_SIZE + 15, progress);
+      let width = mix(baseWidth, LINE_WIDTH, waveProgress);
+      const fitted = fitTickToContent(
+        mix(waveOffset(this.displayY, tick.y), DOT_SIZE + 15, progress),
+        width,
+        baseWidth,
+        this.railX ?? DEFAULT_RAIL_X,
+        tickContentLeft(this, tick),
+      );
+      const x = fitted.x;
+      width = fitted.width;
 
       if (this.isDragging) {
         const previousSide = this.tickSideMap.get(index);
@@ -2969,14 +3081,7 @@ class FileExplorerRail {
 
     for (let index = nextItemStart; index <= nextItemEnd; index += 1) {
       const item = this.items[index];
-      let x = 0;
-      if (this.isDragging) {
-        const distance = item.center - this.displayY;
-        const progress = morphProgress(distance);
-        x = mix(waveOffset(this.displayY, item.center), ACTIVE_LABEL_TRANSLATE_X, progress);
-      } else if (item.active || this.visualActiveIndex === index) {
-        x = ACTIVE_LABEL_TRANSLATE_X;
-      }
+      const x = labelShiftFor(this, index);
 
       if (item.renderedX === x) continue;
       if (x === 0) {
@@ -5014,7 +5119,9 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
       if (!folderItem || typeof folderItem.setCollapsed !== "function") continue;
 
       const wasCollapsed = folderItem.collapsed !== false;
-      if (wasCollapsed) folderItem.setCollapsed(false, true);
+      // No slide animation: mid-animation the new rows are laid out before the
+      // rows below move, and the rail would measure both on top of each other.
+      if (wasCollapsed) folderItem.setCollapsed(false, false);
       didExpand = didExpand || wasCollapsed;
     }
 
