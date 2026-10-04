@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.4.6 测试清单
+# Crisp File Explorer v0.4.7 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,7 +6,7 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.4.6`。
+- [ ] `manifest.json` 版本为 `0.4.7`。
 - [ ] `assets/` 中不存在未引用的旧素材。
 - [ ] `main.js`、`styles.css` 和资源文件不包含本机绝对路径。
 - [ ] 新版授权码激活成功，旧版授权码被拒绝。
@@ -72,7 +72,17 @@
 ## 发布检查
 
 - [ ] 待主仓库验收后，再同步其他运行仓库；各仓库分别保留自己的 `data.json`。
-- [ ] ANKS 实机重载到 v0.4.3；其他运行仓库另行核对。
+- [ ] ANKS 实机重载到当前版本；其他运行仓库另行核对。
+
+## v0.4.7 焦点与隐藏状态验收
+
+- [ ] 切换目录或进入空目录后，Enter / F2 / Delete / Cmd+Backspace 不作用于旧目录文件。
+- [ ] 虚拟列表滚动使焦点条目离开渲染窗口后，Delete 不作用于隐藏条目，方向键从当前滚动位置继续。
+- [ ] 排序后同一文件保留焦点并自动进入可见范围。
+- [ ] 双栏 F2 只重命名聚焦条目，不弹出当前编辑文档的重命名框；移走焦点、关闭双栏及卸载后恢复原生快捷键作用域。
+- [ ] 隐藏文件栏、改变活动目标、重新显示后只有一个当前刻度，旧刻度没有内联 opacity 或波浪位移。
+- [ ] 文件树迁移到其他文档后，新观察器重新监听滚动区与保留的内容节点。
+- [ ] 在已启用插件的 Obsidian 中运行 `obsidian vault="<vault>" dev:debug on`，再运行 `CRISP_E2E_VAULT="<vault>" node scripts/browser-runtime.e2e.cjs --output=/tmp/crisp-fe-e2e.json`，测试完成输出可重复核验的 JSON 工件。
 - [ ] 分享 ZIP 仅包含 `main.js`、`styles.css` 和 `manifest.json`；Orb 已内联，不包含源 `assets/`。
 - [ ] 分享 ZIP 不包含 `data.json`、测试、说明文档、本机路径或私密配置。
 

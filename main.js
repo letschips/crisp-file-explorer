@@ -13,7 +13,7 @@
   product. Keep this attribution visible in modified or derived versions.
 */
 
-const { Plugin, PluginSettingTab, Setting, Notice, Menu, Modal, setIcon, addIcon = (() => {}), normalizePath, requestUrl } = require("obsidian");
+const { Plugin, PluginSettingTab, Setting, Notice, Menu, Modal, Scope, setIcon, addIcon = (() => {}), normalizePath, requestUrl } = require("obsidian");
 
 const CRISP_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAiz41HIDpD59SH3DjKnovUO+EEhTJXjvmiug/ev9t4ZQ=
@@ -2413,6 +2413,7 @@ class FileExplorerRail {
     this.ownerDocument = nextDocument;
     this.ownerWindow = nextWindow;
     this.createObservers();
+    this.observedContent = null;
     this.resizeObserver.observe(this.container);
     this.mutationObserver.observe(this.container, { childList: true, subtree: true });
     this.plugin.enableDocument(this.ownerDocument);
@@ -2542,6 +2543,19 @@ class FileExplorerRail {
       this.cleanupDragListeners();
       this.tickSideMap.clear();
       this.autoExpandedFolderPaths.clear();
+      // Clear the painted state before discarding its range. A hidden tree
+      // can keep the same rows while its active target moves elsewhere.
+      const [tickStart, tickEnd] = this.dynamicTickRange || [0, -1];
+      for (let index = tickStart; index <= tickEnd; index += 1) {
+        const tick = this.tickMarks[index];
+        const el = this.tickEls[index];
+        if (!tick || !el) continue;
+        el.classList.remove("is-line", "is-nearest");
+        el.style.opacity = "";
+        const transform = `translate3d(0px, -50%, 0) scaleX(${getTickBaseWidth(tick) / LINE_WIDTH})`;
+        el.style.transform = transform;
+        tick.renderedTransform = transform;
+      }
       const [dynamicStart, dynamicEnd] = this.dynamicItemRange || [0, -1];
       for (let index = dynamicStart; index <= dynamicEnd; index += 1) {
         const item = this.items[index];
@@ -3988,6 +4002,23 @@ class CrispFolderBrowser {
     this.listen(this.shell, "dragleave", e => { if (!this.shell.contains(e.relatedTarget)) this.clearDrop(); });
     this.listen(this.shell, "dragend", () => this.clearDrop());
     this.listen(this.list, "keydown", e => this.handleListKey(e));
+    // Obsidian handles F2 before DOM keydown bubbles. Give focused browser
+    // rows their own scope so the active editor's rename command cannot win.
+    this.keyScope = new Scope(this.plugin.app.scope);
+    this.keyScope.register([], "F2", event => {
+      if (this.tree.contains(event.target)) this.handleTreeKey(event);
+      else if (this.list.contains(event.target)) this.handleListKey(event);
+      else return;
+      return false;
+    });
+    this.listen(this.shell, "focusin", event => {
+      if (!this.enabled || this.keyScopeActive || !(this.tree.contains(event.target) || this.list.contains(event.target))) return;
+      this.plugin.app.keymap.pushScope(this.keyScope);
+      this.keyScopeActive = true;
+    });
+    this.listen(this.shell, "focusout", event => {
+      if (!this.tree.contains(event.relatedTarget) && !this.list.contains(event.relatedTarget)) this.releaseKeyScope();
+    });
     this.listen(this.list, "click", e => {
       const row = e.target.closest("[data-entry-path]");
       if (row) this.openEntry(row.dataset.entryPath, e);
@@ -4011,6 +4042,12 @@ class CrispFolderBrowser {
       console.error("Crisp File Explorer action failed", error);
       new Notice(error.message || "操作失败，请重试");
     });
+  }
+
+  releaseKeyScope() {
+    if (!this.keyScopeActive) return;
+    this.plugin.app.keymap.popScope(this.keyScope);
+    this.keyScopeActive = false;
   }
 
   createEntry(note, folderPath = this.selectedPath) {
@@ -4204,8 +4241,9 @@ class CrispFolderBrowser {
     this.expandAncestors(path);
     this.renderTree();
     if (changed || this.dirty) {
-      this.renderDirectory();
+      if (changed) this.focusedEntryPath = null;
       this.list.scrollTop = 0;
+      this.renderDirectory();
     }
     this.dirty = false;
     if (reveal) this.treeRows.get(path)?.scrollIntoView({ block: "nearest" });
@@ -4291,27 +4329,25 @@ class CrispFolderBrowser {
   }
 
   handleListKey(e) {
+    const candidate = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
+    // A remembered focus is never authority to act outside the current list.
+    const path = this.entries?.some(file => file.path === candidate) ? candidate : null;
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault(); e.stopPropagation();
-      const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
       if (path) this.openEntry(path, { ctrlKey: true });
       return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
       e.preventDefault(); e.stopPropagation();
-      const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
       const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
       if (file && file.path) this.runAction(() => this.plugin.app.fileManager.promptForDeletion(file));
       return;
     }
     if (e.altKey || e.metaKey || e.ctrlKey) return;
     if (e.key === "Enter") {
-      const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
-      if (path) {
-        e.preventDefault(); e.stopPropagation();
-        this.openEntry(path, e);
-        return;
-      }
+      e.preventDefault(); e.stopPropagation();
+      if (path) this.openEntry(path, e);
+      return;
     }
     if (e.key === "Tab" || e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Escape") {
       e.preventDefault(); e.stopPropagation();
@@ -4322,7 +4358,6 @@ class CrispFolderBrowser {
     if (!["ArrowUp", "ArrowDown", "Home", "End", "Backspace", "F2", "Delete"].includes(e.key)) return;
     e.preventDefault(); e.stopPropagation();
     if (e.key === "Backspace") { this.selectFolder(crispFolderPath(this.selectedPath), true); this.focusList(); return; }
-    const path = e.target.closest("[data-entry-path]")?.dataset.entryPath || this.focusedEntryPath;
     if (e.key === "F2") {
       const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
       if (file && file.path) this.runAction(() => this.plugin.app.fileManager.promptForFileRename(file));
@@ -4335,7 +4370,8 @@ class CrispFolderBrowser {
     }
     const entries = this.entries || [];
     const index = entries.findIndex(file => file.path === path);
-    const next = e.key === "Home" ? 0 : e.key === "End" ? entries.length - 1 : e.key === "ArrowDown" ? index + 1 : index - 1;
+    const visibleIndex = Math.floor(this.list.scrollTop / this.rowHeight);
+    const next = e.key === "Home" ? 0 : e.key === "End" ? entries.length - 1 : index < 0 ? visibleIndex : e.key === "ArrowDown" ? index + 1 : index - 1;
     this.focusEntry(entries[Math.min(entries.length - 1, Math.max(0, next))]?.path);
   }
 
@@ -4386,11 +4422,13 @@ class CrispFolderBrowser {
 
   renderDirectory() {
     const focusedPath = this.doc.activeElement?.dataset?.entryPath;
+    const hadListFocus = this.list.contains(this.doc.activeElement);
     const folder = this.folder(this.selectedPath);
     this.heading.textContent = folder?.name || this.plugin.app.vault.getName();
     this.heading.title = this.selectedPath || this.plugin.app.vault.getName();
     this.back.disabled = !this.selectedPath;
     this.entries = crispCollectEntries(folder, this.sort, this.descendants);
+    if (!this.entries.some(file => file.path === this.focusedEntryPath)) this.focusedEntryPath = null;
     this.rowHeight = this.descendants ? 52 : 38;
     this.shell.classList.toggle("is-flat-view", Boolean(this.descendants));
     this.list.setAttribute("aria-label", this.descendants ? "包含子文件夹的笔记" : "当前文件夹内容");
@@ -4398,7 +4436,8 @@ class CrispFolderBrowser {
     this.empty.hidden = this.entries.length > 0;
     this.windowKey = "";
     this.renderListWindow();
-    if (focusedPath) this.fileRows.get(focusedPath)?.focus({ preventScroll: true });
+    if (focusedPath && this.entries.some(file => file.path === focusedPath)) this.focusEntry(focusedPath);
+    else if (hadListFocus) this.list.focus({ preventScroll: true });
   }
 
   renderListWindow() {
@@ -4448,7 +4487,11 @@ class CrispFolderBrowser {
     this.viewport.style.paddingTop = `${start * this.rowHeight}px`;
     this.viewport.style.paddingBottom = `${(this.entries.length - end) * this.rowHeight}px`;
     this.viewport.replaceChildren(fragment);
-    if (focusedPath) (this.fileRows.get(focusedPath) || this.list).focus({ preventScroll: true });
+    if (focusedPath) {
+      const row = this.fileRows.get(focusedPath);
+      if (!row) this.focusedEntryPath = null;
+      (row || this.list).focus({ preventScroll: true });
+    }
   }
 
   syncActiveFile() {
@@ -4602,6 +4645,7 @@ class CrispFolderBrowser {
     if (this.destroyed) return;
     const nextWindow = getOwnerWindow(this.nativeContainer);
     if (nextWindow !== this.win) {
+      this.releaseKeyScope();
       this.resizeCleanup?.();
       if (this.changeTimer) this.win.clearTimeout(this.changeTimer);
       this.changeTimer = null;
@@ -4618,7 +4662,7 @@ class CrispFolderBrowser {
       this.root.classList.toggle("crisp-fe-browser-open", enabled);
       this.shell.hidden = !enabled;
       this.nativeContainer.inert = enabled;
-      if (!enabled) { this.resizeCleanup?.(); this.clearDrop(); }
+      if (!enabled) { this.releaseKeyScope(); this.resizeCleanup?.(); this.clearDrop(); }
       else this.updateLayout();
     }
     if (!enabled) { this.rail?.setEnabled(false); return; }
@@ -4637,6 +4681,7 @@ class CrispFolderBrowser {
 
   destroy() {
     this.destroyed = true;
+    this.releaseKeyScope();
     this.resizeCleanup?.();
     this.clearDrop();
     this.layoutObserver?.disconnect();
