@@ -239,11 +239,11 @@ async function probe(caseName) {
     fixtureRemoved: !doc.querySelector('[data-crisp-e2e="true"]'), pass: checks.every(result => result.pass) });
 }
 
-const vault = process.env.CRISP_E2E_VAULT || "AI-native Knowledge System";
+const vault = process.env.CRISP_E2E_VAULT;
 const caseName = process.argv.find(value => value.startsWith("--case="))?.slice(7) || "all";
 const outputPath = process.argv.find(value => value.startsWith("--output="))?.slice(9);
 const code = `(${probe.toString()})(${JSON.stringify(caseName)})`;
-const stdout = execFileSync("obsidian", [`vault=${vault}`, "eval", `code=${code}`], { encoding: "utf8", timeout: 60000, maxBuffer: 2 * 1024 * 1024 });
+const stdout = execFileSync("obsidian", [...(vault ? [`vault=${vault}`] : []), "eval", `code=${code}`], { encoding: "utf8", timeout: 60000, maxBuffer: 2 * 1024 * 1024 });
 const line = stdout.split("\n").find(value => value.startsWith("=> "));
 if (!line) throw new Error(stdout.trim() || "Obsidian did not return a probe result; run dev:debug on first");
 const result = JSON.parse(line.slice(3));

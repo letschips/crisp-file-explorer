@@ -1857,9 +1857,16 @@ function waveOffset(dotY, y) {
 }
 
 function stepSpring(state, target, dt) {
-  const displacement = target - state.position;
-  const velocity = state.velocity + (SPRING.stiffness * displacement - SPRING.damping * state.velocity) * dt;
-  const position = state.position + velocity * dt;
+  // A 33ms step is unstable with this stiffness/damping. Keep the original
+  // 60Hz response, but subdivide dropped frames instead of amplifying them.
+  const steps = Math.max(1, Math.ceil(dt * 60 - 1e-9));
+  const stepDt = dt / steps;
+  let { position, velocity } = state;
+  for (let index = 0; index < steps; index += 1) {
+    const displacement = target - position;
+    velocity += (SPRING.stiffness * displacement - SPRING.damping * velocity) * stepDt;
+    position += velocity * stepDt;
+  }
 
   if (Math.abs(target - position) < SPRING.restDelta && Math.abs(velocity) < SPRING.restSpeed) {
     return { position: target, velocity: 0 };
@@ -2022,17 +2029,15 @@ function measureRowContentLeft(el, containerRect) {
   if (!el || typeof el.querySelector !== "function" || !containerRect) return undefined;
   const chevron = el.querySelector(".collapse-icon svg");
   const label = el.querySelector(".tree-item-inner");
-  let target = null;
   for (const candidate of [chevron, label]) {
     if (!candidate || typeof candidate.getBoundingClientRect !== "function") continue;
-    if (candidate.getBoundingClientRect().width > 0) {
-      target = candidate;
-      break;
+    const rect = candidate.getBoundingClientRect();
+    if (rect.width > 0) {
+      const shift = parseFloat((el.style && el.style.translate) || "") || 0;
+      return rect.left - containerRect.left - shift;
     }
   }
-  if (!target) return undefined;
-  const shift = parseFloat((el.style && el.style.translate) || "") || 0;
-  return target.getBoundingClientRect().left - containerRect.left - shift;
+  return undefined;
 }
 
 function readRailX(container) {
@@ -2770,7 +2775,10 @@ class FileExplorerRail {
     }
     this.syncEmptyState(this.items.length);
     this.tickMarks = nextTickMarks;
-    this.container.style.setProperty("--crisp-fe-height", `${Math.max(this.container.scrollHeight, this.container.clientHeight)}px`);
+    const railHeight = `${Math.max(this.container.scrollHeight, this.container.clientHeight)}px`;
+    if (this.container.style.getPropertyValue("--crisp-fe-height") !== railHeight) {
+      this.container.style.setProperty("--crisp-fe-height", railHeight);
+    }
     this.updateRailLineBounds();
     this.syncTickElements({ preserveMotion: preserveTickMotion });
 
@@ -2868,8 +2876,8 @@ class FileExplorerRail {
     const top = Math.max(0, first.center - RAIL_LINE_PADDING);
     const bottom = Math.max(top, last.center + RAIL_LINE_PADDING);
     const height = Math.max(1, bottom - top);
-    this.line.style.top = `${top}px`;
-    this.line.style.height = `${height}px`;
+    if (this.line.style.top !== `${top}px`) this.line.style.top = `${top}px`;
+    if (this.line.style.height !== `${height}px`) this.line.style.height = `${height}px`;
     this.updateRailLineFocus();
   }
 
@@ -2896,7 +2904,7 @@ class FileExplorerRail {
       if (el.style.width !== `${LINE_WIDTH}px`) {
         el.style.width = `${LINE_WIDTH}px`;
       }
-      el.classList.add("crisp-fe-tick");
+      if (!el.classList.contains("crisp-fe-tick")) el.classList.add("crisp-fe-tick");
       el.classList.toggle("is-long", mark.kind === "long");
       el.classList.toggle("is-short", mark.kind !== "long");
       el.classList.toggle("is-folder", mark.isFile === false);
@@ -2972,7 +2980,9 @@ class FileExplorerRail {
     }
 
     this.render();
-    if (this.isSettled()) {
+    // Pointer changes and edge scrolling request their own frame. Holding
+    // still needs no animation loop; release continues the spring as usual.
+    if (this.isDragging || this.isSettled()) {
       this.frame = null;
       this.lastFrameTime = undefined;
       return;
@@ -2982,7 +2992,8 @@ class FileExplorerRail {
 
   render() {
     this.updateRailLineFocus();
-    this.orb.style.transform = `translate3d(0, ${this.displayY}px, 0)`;
+    const orbTransform = `translate3d(0, ${this.displayY}px, 0)`;
+    if (this.orb.style.transform !== orbTransform) this.orb.style.transform = orbTransform;
     this.renderOrbBall();
 
     const nearestTick = nearestIndex(this.tickMarks, this.displayY, "y");
@@ -3131,7 +3142,8 @@ class FileExplorerRail {
       this.orbRotation += (viewportY - this.lastRenderViewportY) * ORB_ROTATION_PER_PX;
     }
     this.lastRenderViewportY = viewportY;
-    ball.style.transform = prefersReducedMotion.matches ? "none" : `rotate(${this.orbRotation}deg)`;
+    const rotation = prefersReducedMotion.matches ? "none" : `rotate(${this.orbRotation}deg)`;
+    if (ball.style.transform !== rotation) ball.style.transform = rotation;
   }
 
   updateRailLineFocus() {
@@ -5179,7 +5191,9 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
 
   enableDocument(ownerDocument) {
     if (!ownerDocument || !ownerDocument.body || !ownerDocument.body.classList) return;
-    ownerDocument.body.classList.add("crisp-file-explorer-enabled");
+    if (!ownerDocument.body.classList.contains("crisp-file-explorer-enabled")) {
+      ownerDocument.body.classList.add("crisp-file-explorer-enabled");
+    }
     if (!this.enabledDocuments) this.enabledDocuments = new Set();
     this.enabledDocuments.add(ownerDocument);
   }

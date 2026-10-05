@@ -340,7 +340,7 @@ test("cold-open motion uses the file explorer owner window and clears cleanly", 
       clientHeight: 300,
       querySelectorAll() { return [activeElement]; },
       getBoundingClientRect() { return { top: 0 }; },
-      style: { setProperty() {} },
+      style: { setProperty() {}, getPropertyValue() { return ""; } },
     },
     plugin: {
       settings: { orbStyle: "default", includeFolders: true },
@@ -567,7 +567,7 @@ test("a retained folder target still offsets its label when no file is active", 
       clientHeight: 240,
       querySelectorAll() { return [firstFile, targetFolder]; },
       getBoundingClientRect() { return { top: 0 }; },
-      style: { setProperty() {} },
+      style: { setProperty() {}, getPropertyValue() { return ""; } },
     },
     plugin: {
       settings: { orbStyle: "default", includeFolders: true },
@@ -1058,7 +1058,7 @@ test("file-tree remeasurement keeps stable active-row motion applied", () => {
       clientHeight: 300,
       querySelectorAll() { return [activeElement]; },
       getBoundingClientRect() { return { top: 0 }; },
-      style: { setProperty() {} },
+      style: { setProperty() {}, getPropertyValue() { return ""; } },
     },
     plugin: {
       settings: { orbStyle: "default", includeFolders: true },
@@ -2734,7 +2734,7 @@ function makeLicensePlugin(PluginClass, context, verdicts) {
     enabledDocuments: new Set(),
     activeRevealRunId: 0,
     activeRevealTimers: [],
-    app: { workspace: { containerEl: { ownerDocument: { body: { classList: { add() {}, remove() {} } } } } } },
+    app: { workspace: { containerEl: { ownerDocument: { body: { classList: fakeClassList() } } } } },
   });
   plugin.started = 0;
   plugin.startRuntime = function () { this.started += 1; this.runtimeStarted = true; };
