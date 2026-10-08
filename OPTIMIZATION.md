@@ -1,6 +1,6 @@
 # Crisp File Explorer 维护说明
 
-当前版本：v0.4.8
+当前版本：v0.4.9
 
 作者：letschips（小红书博主）
 
@@ -13,6 +13,10 @@
 - 动画帧只更新 orb 附近的刻度与标题，普通滚动不会重新测量整棵文件树。
 - 每个文件浏览器面板拥有独立控制器，并支持 Obsidian 独立窗口中的文件浏览器。
 - 智能磁吸综合近期使用与打开频率，固定点优先，总数最多 8 个。
+
+## v0.4.9 维护范围
+
+- 刻度、orb 与竖线焦点只用 2D `translate`，不设 `will-change: transform`。macOS 半透明窗口中每个独立合成层都可能残留旧帧（悬停提示、行高亮、文字重影）；回归测试禁止 `translate3d` / `translateZ` / `perspective()` 与 `will-change: transform`。
 
 ## v0.4.8 维护范围
 

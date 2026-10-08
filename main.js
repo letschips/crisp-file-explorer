@@ -2557,7 +2557,7 @@ class FileExplorerRail {
         if (!tick || !el) continue;
         el.classList.remove("is-line", "is-nearest");
         el.style.opacity = "";
-        const transform = `translate3d(0px, -50%, 0) scaleX(${getTickBaseWidth(tick) / LINE_WIDTH})`;
+        const transform = `translate(0px, -50%) scaleX(${getTickBaseWidth(tick) / LINE_WIDTH})`;
         el.style.transform = transform;
         tick.renderedTransform = transform;
       }
@@ -2913,7 +2913,7 @@ class FileExplorerRail {
       el.classList.toggle("is-magnet", Boolean(mark.isMagnet));
       el.classList.toggle("is-pinned", Boolean(mark.isPinned));
 
-      const baseTransform = `translate3d(0px, -50%, 0) scaleX(${getTickBaseWidth(mark) / LINE_WIDTH})`;
+      const baseTransform = `translate(0px, -50%) scaleX(${getTickBaseWidth(mark) / LINE_WIDTH})`;
       if (!preserveMotion) {
         el.classList.remove("is-line", "is-nearest");
         if (el.style.opacity) el.style.opacity = "";
@@ -2992,7 +2992,7 @@ class FileExplorerRail {
 
   render() {
     this.updateRailLineFocus();
-    const orbTransform = `translate3d(0, ${this.displayY}px, 0)`;
+    const orbTransform = `translate(0, ${this.displayY}px)`;
     if (this.orb.style.transform !== orbTransform) this.orb.style.transform = orbTransform;
     this.renderOrbBall();
 
@@ -3009,7 +3009,7 @@ class FileExplorerRail {
       if (!tick || !el) continue;
       el.classList.remove("is-line", "is-nearest");
       if (el.style.opacity) el.style.opacity = "";
-      const baseTransform = `translate3d(0px, -50%, 0) scaleX(${getTickBaseWidth(tick) / LINE_WIDTH})`;
+      const baseTransform = `translate(0px, -50%) scaleX(${getTickBaseWidth(tick) / LINE_WIDTH})`;
       if (tick.renderedTransform !== baseTransform) {
         el.style.transform = baseTransform;
         tick.renderedTransform = baseTransform;
@@ -3084,7 +3084,7 @@ class FileExplorerRail {
       }
 
       const scaleX = width / LINE_WIDTH;
-      const transformValue = `translate3d(${x}px, -50%, 0) scaleX(${scaleX})`;
+      const transformValue = `translate(${x}px, -50%) scaleX(${scaleX})`;
       if (tick.renderedTransform !== transformValue) {
         el.style.transform = transformValue;
         tick.renderedTransform = transformValue;
@@ -3152,7 +3152,7 @@ class FileExplorerRail {
     const first = this.items[0];
     const top = Math.max(0, first.center - RAIL_LINE_PADDING);
     const focusY = this.displayY - top - RAIL_FOCUS_HEIGHT / 2;
-    const transform = `translate3d(0px, ${focusY}px, 0)`;
+    const transform = `translate(0px, ${focusY}px)`;
     if (transform === this.lastLineFocusTransform) return;
     this.lineFocus.style.transform = transform;
     this.lastLineFocusTransform = transform;

@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.4.8 测试清单
+# Crisp File Explorer v0.4.9 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,7 +6,7 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.4.8`。
+- [ ] `manifest.json` 版本为 `0.4.9`。
 - [ ] `node scripts/rail-performance.e2e.cjs --output=<path>` 全部通过并保存 JSON 工件。
 - [ ] 约 30fps 及掉帧时，小球仍保持有界并到达目标；按住不动不持续重绘，边缘滚动仍持续推进。
 - [ ] `assets/` 中不存在未引用的旧素材。
@@ -16,6 +16,7 @@
 
 ## 主窗口回归
 
+- [ ] 半透明窗口中连续悬停文件、滚动文件树后，悬停提示、行高亮和文字不残留。
 - [ ] 文件浏览器正常显示轨道、刻度和当前 orb。
 - [ ] 第一个条目上方、最后一个条目下方没有悬空的短刻度。
 - [ ] 静止和 orb 鼓起时，刻度都不碰折叠箭头或文字。

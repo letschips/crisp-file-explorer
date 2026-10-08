@@ -78,7 +78,6 @@ body.crisp-file-explorer-enabled .crisp-fe-line-focus {
     color-mix(in srgb, var(--crisp-fe-line-color) 10%, transparent) 88%,
     transparent 100%
   );
-  will-change: transform;
   pointer-events: none;
 }
 
@@ -191,7 +190,6 @@ body.crisp-file-explorer-enabled .crisp-fe-orb {
   pointer-events: auto;
   touch-action: none;
   user-select: none;
-  will-change: transform;
   transition: box-shadow 110ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -267,7 +265,6 @@ body.crisp-file-explorer-enabled .crisp-fe-browser .crisp-fe-orb-ball {
   transform-origin: 50% 50%;
   transform-box: border-box;
   shape-rendering: geometricPrecision;
-  will-change: transform;
   pointer-events: none;
   scale: 1;
   transition: scale 110ms cubic-bezier(0.23, 1, 0.32, 1);

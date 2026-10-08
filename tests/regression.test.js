@@ -836,7 +836,7 @@ test("tick motion uses scaleX without per-frame width writes", () => {
 
 test("stable activity ticks keep their live line state during document refreshes", () => {
   const { FileExplorerRail } = loadPluginRuntime();
-  const dynamicTransform = "translate3d(22px, -50%, 0) scaleX(0.9)";
+  const dynamicTransform = "translate(22px, -50%) scaleX(0.9)";
   const tickEl = fakeTickElement(
     "crisp-fe-tick is-long is-file is-today is-magnet is-line is-nearest",
     {
@@ -2368,9 +2368,9 @@ test("positioning transform is translate-only, rotation transform is rotate-only
 
   FileExplorerRail.prototype.render.call(controller);
 
-  // Position transform on orb: must be translate3d, must not contain rotate
-  assert.match(orbStyle.transform, /^translate3d\(0/,
-    "orb position transform should be translate3d (positioning only)");
+  // Position transform on orb: must be a 2D translate, must not contain rotate
+  assert.match(orbStyle.transform, /^translate\(0/,
+    "orb position transform should be a 2D translate (positioning only)");
   assert.doesNotMatch(orbStyle.transform, /rotate/,
     "orb position transform must not contain rotate — rotation belongs on the ball child");
 
@@ -2943,4 +2943,14 @@ test("auto-expanding a folder while dragging opens it in one step, without the c
   // An animated expand lays out the new rows before the rows below move, so the
   // rail measures both sets on top of each other for a few frames (ghosting).
   assert.deepEqual(calls, [[false, false]]);
+});
+
+test("rail elements never get their own compositor layer (translucent windows keep stale frames)", () => {
+  // In a translucent Obsidian window every promoted layer can leave old frames
+  // behind: hover tooltips, row highlights and tree text stay on screen after
+  // they are gone from the DOM. 2D transforms still animate without promotion.
+  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8")
+    .replace(/<svg[\s\S]*?<\/svg>/g, "");
+  assert.doesNotMatch(source, /translate3d|translateZ|perspective\(/);
+  assert.doesNotMatch(readStyles(), /will-change\s*:\s*transform/);
 });
