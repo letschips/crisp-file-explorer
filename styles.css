@@ -975,11 +975,48 @@ body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explore
 /* Custom order: drop line between rows and the pin mark on pinned rows. */
 .crisp-fe-order-indicator {
   position: fixed;
+  top: 0;
+  left: 0;
   z-index: var(--layer-tooltip);
-  height: 2px;
-  border-radius: 2px;
-  background: var(--interactive-accent);
+  height: 6px;
   pointer-events: none;
+  opacity: 1;
+  transition: transform 110ms ease-out, width 110ms ease-out, opacity 120ms ease-out;
+}
+
+.crisp-fe-order-indicator.is-entering {
+  opacity: 0;
+  transition: none;
+}
+
+/* Hollow ring marks the level the item lands on; the line thins out to the right. */
+.crisp-fe-order-indicator::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 50%;
+}
+
+.crisp-fe-order-indicator::after {
+  content: "";
+  position: absolute;
+  top: 2.25px;
+  left: 6px;
+  right: 0;
+  height: 1.5px;
+  border-radius: 1px;
+  background: linear-gradient(to right, var(--interactive-accent) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crisp-fe-order-indicator {
+    transition: none;
+  }
 }
 
 .workspace-leaf-content[data-type="file-explorer"] .tree-item-self > .crisp-fe-order-pin {

@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.5.0 测试清单
+# Crisp File Explorer v0.5.1 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,7 +6,7 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.5.0`。
+- [ ] `manifest.json` 版本为 `0.5.1`。
 - [ ] `node scripts/rail-performance.e2e.cjs --output=<path>` 全部通过并保存 JSON 工件。
 - [ ] 约 30fps 及掉帧时，小球仍保持有界并到达目标；按住不动不持续重绘，边缘滚动仍持续推进。
 - [ ] `assets/` 中不存在未引用的旧素材。
@@ -36,7 +36,7 @@
 
 ## 文件排序回归
 
-- [ ] 拖到两行之间显示插入线，松开后顺序改变，重启 Obsidian 后保持。
+- [ ] 拖到两行之间显示插入线（左端空心圆环对齐目标层级、线向右淡出、换位置时平滑滑动），松开后顺序改变，重启 Obsidian 后保持。
 - [ ] 跨文件夹拖到指定行之前/之后，文件移动到目标文件夹且位置正确，双链正常更新。
 - [ ] 拖到文件夹标题中间仍由 Obsidian 移入文件夹；拖到行边缘时文件夹不悬停展开。
 - [ ] 右键置顶后条目排到同级最前并显示图钉；取消置顶后回到原位置。

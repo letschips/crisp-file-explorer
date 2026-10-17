@@ -5271,11 +5271,13 @@ class CrispExplorerOrder {
 
   showDrop(target, container) {
     const ownerDocument = container.ownerDocument;
+    let entering = false;
     if (!this.indicator || this.indicator.ownerDocument !== ownerDocument || !this.indicator.isConnected) {
       if (this.indicator) this.indicator.remove();
       this.indicator = ownerDocument.createElement("div");
-      this.indicator.className = "crisp-fe-order-indicator";
+      this.indicator.className = "crisp-fe-order-indicator is-entering";
       ownerDocument.body.appendChild(this.indicator);
+      entering = true;
     }
     const box = container.getBoundingClientRect();
     const rowRect = target.row.getBoundingClientRect();
@@ -5287,11 +5289,16 @@ class CrispExplorerOrder {
       const child = target.row.parentElement && target.row.parentElement.querySelector(":scope > .tree-item-children .tree-item-inner");
       left = child ? child.getBoundingClientRect().left : left + 16;
     }
-    left = Math.max(box.left, left - 4);
-    Object.assign(this.indicator.style, {
-      left: `${left}px`,
-      top: `${Math.round(top - 1)}px`,
-      width: `${Math.max(24, box.right - left - 8)}px`,
+    // The ring sits just left of the text it will land beside; its centre marks the gap.
+    left = Math.max(box.left, left - 10);
+    const indicator = this.indicator;
+    indicator.style.width = `${Math.max(24, box.right - left - 8)}px`;
+    indicator.style.transform = `translate(${Math.round(left)}px, ${Math.round(top - 3)}px)`;
+    if (!entering) return;
+    // Place it before turning transitions on, so it fades in where it belongs instead of sliding from the corner.
+    const ownerWindow = ownerDocument.defaultView || window;
+    ownerWindow.requestAnimationFrame(() => {
+      if (indicator.isConnected) indicator.classList.remove("is-entering");
     });
   }
 

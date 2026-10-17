@@ -4,7 +4,7 @@ Crisp File Explorer adds an animated rail, a draggable spring orb, and an option
 
 Crisp File Explorer 给 Obsidian 原生文件树加一条动效轨道和一个可以拖动的弹簧小球，另有可选的轻量双栏浏览。文件树本身仍是 Obsidian 原生的，插件只在旁边加轨道和交互。
 
-当前版本 `0.5.0`，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 `0.5.1`，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 功能
 
