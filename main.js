@@ -209,6 +209,13 @@ const DEFAULT_SETTINGS = {
     pinnedPaths: [],
     fileStats: {},
   },
+  explorerOrder: {
+    enabled: true,
+    newItems: "top",
+    folders: {},
+    pinned: [],
+    flexplorerImported: false,
+  },
   licenseCode: "",
 };
 
@@ -3744,6 +3751,61 @@ class CrispFileExplorerSettingTab extends PluginSettingTab {
         })
       );
 
+    const orderBody = createGroup(
+      "文件排序",
+      "拖到两行之间调整顺序，右键可以置顶。",
+      false,
+    );
+    const order = this.plugin.explorerOrder;
+    order.sync();
+    const orderData = this.plugin.settings.explorerOrder;
+
+    if (order.isFlexplorerEnabled()) {
+      orderBody.createDiv({
+        cls: "setting-item-description",
+        text: "Flexplorer 还在启用，文件顺序暂由它管理。在「第三方插件」里停用 Flexplorer 后，这里会自动接管，并导入一次它的顺序和置顶。",
+      });
+    }
+
+    new Setting(orderBody)
+      .setName("拖动调整顺序")
+      .setDesc("拖到两行之间放下即可调整顺序；拖到文件夹中间仍是移入文件夹。关闭后恢复 Obsidian 默认排序，已保存的顺序会保留。")
+      .addToggle((toggle) =>
+        toggle.setValue(orderData.enabled).onChange(async (value) => {
+          this.plugin.settings.explorerOrder = normalizeExplorerOrder({ ...this.plugin.settings.explorerOrder, enabled: value });
+          order.requestSort();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(orderBody)
+      .setName("新条目位置")
+      .setDesc("还没排过的新文件和新文件夹放在哪一端。")
+      .addDropdown((dropdown) => dropdown
+        .addOption("top", "最前")
+        .addOption("bottom", "最后")
+        .setValue(orderData.newItems)
+        .onChange(async (value) => {
+          this.plugin.settings.explorerOrder = normalizeExplorerOrder({ ...this.plugin.settings.explorerOrder, newItems: value });
+          order.requestSort();
+          await this.plugin.saveSettings();
+        }));
+
+    const folderCount = Object.keys(orderData.folders).length;
+    new Setting(orderBody)
+      .setName("从 Flexplorer 导入")
+      .setDesc(`当前保存了 ${folderCount} 个文件夹的顺序、${orderData.pinned.length} 个置顶。导入会用 Flexplorer 的顺序和置顶替换这些。`)
+      .addButton((button) => button
+        .setButtonText("导入")
+        .onClick(async () => {
+          button.setDisabled(true);
+          try {
+            await order.importFromFlexplorer();
+          } finally {
+            this.display();
+          }
+        }));
+
     new Setting(containerEl)
       .setName("轻量双栏浏览")
       .setDesc("左侧浏览文件夹，右侧显示当前目录。也可用文件浏览器顶栏按钮切换。")
@@ -4709,6 +4771,581 @@ class CrispFolderBrowser {
   }
 }
 
+// Custom order for the native file tree: drag a row between two rows to reorder it,
+// pin rows to the top of their folder. Orders are item names keyed by folder path;
+// names an order has never seen keep the native sort and sit at one end.
+const FLEXPLORER_PLUGIN_ID = "flexplorer";
+const ORDER_SAVE_DELAY_MS = 400;
+const ORDER_SYNC_INTERVAL_MS = 1500;
+
+function crispOrderParent(path) {
+  const index = (path || "").lastIndexOf("/");
+  return index < 0 ? "/" : path.slice(0, index);
+}
+
+function crispOrderName(path) {
+  return (path || "").slice((path || "").lastIndexOf("/") + 1);
+}
+
+function crispOrderMatches(path, root) {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+function crispUniqueStrings(value) {
+  return Array.isArray(value) ? Array.from(new Set(value.filter((item) => typeof item === "string" && item))) : [];
+}
+
+function normalizeExplorerOrder(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const folders = {};
+  if (source.folders && typeof source.folders === "object" && !Array.isArray(source.folders)) {
+    for (const [folder, list] of Object.entries(source.folders)) {
+      const names = crispUniqueStrings(list);
+      if (folder && names.length) folders[folder] = names;
+    }
+  }
+  return {
+    enabled: source.enabled !== false,
+    newItems: source.newItems === "bottom" ? "bottom" : "top",
+    folders,
+    pinned: crispUniqueStrings(source.pinned),
+    flexplorerImported: source.flexplorerImported === true,
+  };
+}
+
+function crispOrderFolderItems(items, folderPath, order) {
+  const list = order.folders[folderPath];
+  const pinned = order.pinned.length ? new Set(order.pinned) : null;
+  const isPinned = (item) => Boolean(pinned && pinned.has(item && item.file && item.file.path));
+  if (!list && !items.some(isPinned)) return items;
+  const rank = new Map((list || []).map((name, index) => [name, index]));
+  const unlisted = order.newItems === "bottom" ? Number.MAX_SAFE_INTEGER : -1;
+  return items
+    .map((item, index) => {
+      const name = item && item.file && item.file.name;
+      return { item, index, pinned: isPinned(item), rank: rank.has(name) ? rank.get(name) : unlisted };
+    })
+    .sort((a, b) => (Number(b.pinned) - Number(a.pinned)) || (a.rank - b.rank) || (a.index - b.index))
+    .map((entry) => entry.item);
+}
+
+function crispReorderNames(names, moving, anchor, side) {
+  const hasAnchor = anchor !== null && anchor !== undefined;
+  if (hasAnchor && moving.includes(anchor)) return names.slice();
+  const rest = names.filter((name) => !moving.includes(name));
+  let index = hasAnchor ? rest.indexOf(anchor) : 0;
+  if (index < 0) index = 0;
+  else if (hasAnchor && side === "after") index += 1;
+  rest.splice(index, 0, ...moving);
+  return rest;
+}
+
+// Returns the same object when nothing changes: Obsidian reports every descendant of a
+// renamed folder, and most of those events touch nothing here.
+function crispRenameInOrder(order, oldPath, newPath) {
+  if (!oldPath || !newPath || oldPath === newPath) return order;
+  const oldParent = crispOrderParent(oldPath);
+  const newParent = crispOrderParent(newPath);
+  const oldName = crispOrderName(oldPath);
+  const newName = crispOrderName(newPath);
+  const folderKeys = Object.keys(order.folders).filter((folder) => crispOrderMatches(folder, oldPath));
+  const parentList = order.folders[oldParent];
+  const listed = Boolean(parentList && parentList.includes(oldName));
+  const pinnedHit = order.pinned.some((path) => crispOrderMatches(path, oldPath));
+  if (!folderKeys.length && !listed && !pinnedHit) return order;
+
+  const kept = {};
+  const moved = {};
+  for (const [folder, list] of Object.entries(order.folders)) {
+    if (crispOrderMatches(folder, oldPath)) moved[newPath + folder.slice(oldPath.length)] = list.slice();
+    else kept[folder] = list.slice();
+  }
+  const folders = { ...kept, ...moved };
+  if (listed) {
+    const list = folders[oldParent];
+    const index = list.indexOf(oldName);
+    if (oldParent === newParent && !list.includes(newName)) list[index] = newName;
+    else list.splice(index, 1);
+    if (!list.length) delete folders[oldParent];
+  }
+  const pinned = order.pinned.map((path) => (crispOrderMatches(path, oldPath) ? newPath + path.slice(oldPath.length) : path));
+  return normalizeExplorerOrder({ ...order, folders, pinned });
+}
+
+function crispDeleteFromOrder(order, path) {
+  if (!path) return order;
+  const parent = crispOrderParent(path);
+  const name = crispOrderName(path);
+  const touched = Object.keys(order.folders).some((folder) => crispOrderMatches(folder, path))
+    || Boolean(order.folders[parent] && order.folders[parent].includes(name))
+    || order.pinned.some((pinnedPath) => crispOrderMatches(pinnedPath, path));
+  if (!touched) return order;
+  const folders = {};
+  for (const [folder, list] of Object.entries(order.folders)) {
+    if (crispOrderMatches(folder, path)) continue;
+    folders[folder] = folder === parent ? list.filter((item) => item !== name) : list.slice();
+  }
+  const pinned = order.pinned.filter((pinnedPath) => !crispOrderMatches(pinnedPath, path));
+  return normalizeExplorerOrder({ ...order, folders, pinned });
+}
+
+function crispImportFlexplorer(data) {
+  const items = data && typeof data === "object" ? data.items : null;
+  if (!items || typeof items !== "object" || Array.isArray(items)) return null;
+  const folders = {};
+  const pinned = [];
+  for (const [path, item] of Object.entries(items)) {
+    if (!item || typeof item !== "object") continue;
+    if (item.isPinned === true) pinned.push(path);
+    const custom = item.sortOrder === undefined || item.sortOrder === "custom";
+    const list = crispUniqueStrings(item.customOrder);
+    if (custom && list.length) folders[path] = list;
+  }
+  return { folders, pinned, newItems: data.newItemPlacement === "bottom" ? "bottom" : "top" };
+}
+
+// Files split at the middle. Folders keep their middle band for Obsidian's own
+// "move into folder"; the bottom edge of an open folder means "first inside it".
+function crispDropZone(top, height, y, isFolder, expanded) {
+  const ratio = height > 0 ? (y - top) / height : 0.5;
+  if (!isFolder) return ratio < 0.5 ? "before" : "after";
+  if (ratio < 0.25) return "before";
+  if (ratio > 0.75) return expanded ? "inside-start" : "after";
+  return "inside";
+}
+
+class CrispExplorerOrder {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.app = plugin.app;
+    this.containers = new Map();
+    this.patchedPrototype = null;
+    this.originalSort = null;
+    this.wrapper = null;
+    this.blockedByFlexplorer = null;
+    this.takingOver = false;
+    this.indicator = null;
+    this.indicatorPaths = new Set();
+    this.saveTimer = null;
+    this.sortTimer = null;
+    this.destroyed = false;
+  }
+
+  get order() {
+    return this.plugin.settings.explorerOrder;
+  }
+
+  set order(next) {
+    this.plugin.settings.explorerOrder = next;
+  }
+
+  isFlexplorerEnabled() {
+    const enabled = this.app.plugins && this.app.plugins.enabledPlugins;
+    return Boolean(enabled && typeof enabled.has === "function" && enabled.has(FLEXPLORER_PLUGIN_ID));
+  }
+
+  isActive() {
+    return !this.destroyed && !this.plugin.unloading && this.plugin.licensed === true
+      && this.order.enabled && !this.isFlexplorerEnabled();
+  }
+
+  explorerViews() {
+    const leaves = typeof this.app.workspace.getLeavesOfType === "function"
+      ? this.app.workspace.getLeavesOfType("file-explorer")
+      : [];
+    return leaves.map((leaf) => leaf && leaf.view).filter((view) => view && typeof view.getSortedFolderItems === "function");
+  }
+
+  isPatched() {
+    return Boolean(this.wrapper && this.patchedPrototype && this.patchedPrototype.getSortedFolderItems === this.wrapper);
+  }
+
+  ensurePatched() {
+    if (this.isPatched()) return true;
+    const view = this.explorerViews()[0];
+    if (!view) return false;
+    const proto = Object.getPrototypeOf(view);
+    const original = proto.getSortedFolderItems;
+    const order = this;
+    const wrapper = function (folder) {
+      const items = original.call(this, folder);
+      if (!folder || !Array.isArray(items) || !order.isActive()) return items;
+      return crispOrderFolderItems(items, folder.path, order.order);
+    };
+    this.patchedPrototype = proto;
+    this.originalSort = original;
+    this.wrapper = wrapper;
+    proto.getSortedFolderItems = wrapper;
+    return true;
+  }
+
+  unpatch() {
+    // If another plugin wrapped this one, leave the chain alone; the wrapper passes through once inactive.
+    if (this.isPatched()) this.patchedPrototype.getSortedFolderItems = this.originalSort;
+    this.patchedPrototype = null;
+    this.originalSort = null;
+    this.wrapper = null;
+  }
+
+  // Called on start, on a timer and from the settings tab. Flexplorer patches the same
+  // method, so this plugin stays out of the way while it is enabled and takes over once it is not.
+  sync() {
+    if (this.destroyed || this.plugin.unloading || this.plugin.licensed !== true) return;
+    const blocked = this.isFlexplorerEnabled();
+    if (blocked !== this.blockedByFlexplorer) {
+      this.blockedByFlexplorer = blocked;
+      if (blocked) this.syncIndicators();
+      else this.takeOver();
+      return;
+    }
+    if (!blocked && !this.takingOver && !this.isPatched() && this.ensurePatched()) this.requestSort();
+  }
+
+  async takeOver() {
+    if (this.takingOver) return;
+    this.takingOver = true;
+    try {
+      if (!this.order.flexplorerImported) await this.importFromFlexplorer({ auto: true });
+    } finally {
+      this.takingOver = false;
+    }
+    if (this.ensurePatched()) this.requestSort();
+  }
+
+  async importFromFlexplorer({ auto = false } = {}) {
+    const adapter = this.app.vault.adapter;
+    const dataPath = normalizePath(`${this.app.vault.configDir}/plugins/${FLEXPLORER_PLUGIN_ID}/data.json`);
+    let imported = null;
+    try {
+      if (await adapter.exists(dataPath)) imported = crispImportFlexplorer(JSON.parse(await adapter.read(dataPath)));
+    } catch (error) {
+      // A file iCloud has not finished syncing reads as broken; try again next time.
+      console.debug("Crisp File Explorer could not read Flexplorer data", error);
+      if (!auto) new Notice("没能读取 Flexplorer 的数据，未导入");
+      return false;
+    }
+    if (this.destroyed) return false;
+    const current = this.order;
+    const hasOwnOrder = Object.keys(current.folders).length > 0 || current.pinned.length > 0;
+    if (imported && (!auto || !hasOwnOrder)) {
+      const vault = this.app.vault;
+      const exists = (path) => path === "/" || Boolean(vault.getAbstractFileByPath(path));
+      const folders = Object.fromEntries(Object.entries(imported.folders).filter(([path]) => exists(path)));
+      const pinned = imported.pinned.filter(exists);
+      this.order = normalizeExplorerOrder({ ...current, folders, pinned, newItems: imported.newItems, flexplorerImported: true });
+      new Notice(`已从 Flexplorer 导入 ${Object.keys(folders).length} 个文件夹的顺序${pinned.length ? `和 ${pinned.length} 个置顶` : ""}`);
+    } else {
+      if (!auto && !imported) new Notice("没有找到 Flexplorer 的排序数据");
+      this.order = normalizeExplorerOrder({ ...current, flexplorerImported: true });
+    }
+    await this.plugin.saveSettings();
+    this.requestSort();
+    return Boolean(imported);
+  }
+
+  requestSort() {
+    if (this.sortTimer) window.clearTimeout(this.sortTimer);
+    this.sortTimer = window.setTimeout(() => {
+      this.sortTimer = null;
+      this.sortNow();
+    }, 30);
+  }
+
+  sortNow() {
+    for (const view of this.explorerViews()) {
+      try {
+        if (typeof view.sort === "function") view.sort();
+      } catch (error) {
+        console.debug("Crisp File Explorer could not sort the file explorer", error);
+      }
+    }
+    this.syncIndicators();
+  }
+
+  scheduleSave() {
+    if (this.saveTimer) window.clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      this.saveTimer = null;
+      this.plugin.saveSettings();
+    }, ORDER_SAVE_DELAY_MS);
+  }
+
+  flushSave() {
+    if (!this.saveTimer) return null;
+    window.clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    return this.plugin.saveSettings();
+  }
+
+  onRename(file, oldPath) {
+    const next = crispRenameInOrder(this.order, oldPath, file && file.path);
+    if (next === this.order) return;
+    if (this.indicatorPaths.has(oldPath)) this.indicatorPaths.add(file.path);
+    this.order = next;
+    this.scheduleSave();
+    this.requestSort();
+  }
+
+  onDelete(file) {
+    const next = crispDeleteFromOrder(this.order, file && file.path);
+    if (next === this.order) return;
+    this.order = next;
+    this.scheduleSave();
+    this.syncIndicators();
+  }
+
+  addMenuItems(menu, file) {
+    if (!this.isActive() || !menu || typeof menu.addItem !== "function" || !file || !file.path || file.path === "/") return;
+    const pinned = this.order.pinned.includes(file.path);
+    menu.addItem((item) => item
+      .setTitle(pinned ? "取消文件列表置顶" : "在文件列表置顶")
+      .setIcon(pinned ? "arrow-down-from-line" : "arrow-up-to-line")
+      .onClick(() => this.setPinned(file.path, !pinned)));
+    if (Array.isArray(file.children) && this.order.folders[file.path]) {
+      menu.addItem((item) => item
+        .setTitle("恢复文件夹默认顺序")
+        .setIcon("arrow-down-up")
+        .onClick(() => this.resetFolder(file.path)));
+    }
+  }
+
+  async setPinned(path, pinned) {
+    const list = this.order.pinned.filter((item) => item !== path);
+    if (pinned) list.push(path);
+    this.order = normalizeExplorerOrder({ ...this.order, pinned: list });
+    this.requestSort();
+    await this.plugin.saveSettings();
+  }
+
+  async resetFolder(path) {
+    const folders = { ...this.order.folders };
+    delete folders[path];
+    this.order = normalizeExplorerOrder({ ...this.order, folders });
+    this.requestSort();
+    await this.plugin.saveSettings();
+  }
+
+  syncIndicators() {
+    const active = this.isActive();
+    const pinned = new Set(active ? this.order.pinned : []);
+    for (const view of this.explorerViews()) {
+      const fileItems = view.fileItems || {};
+      for (const path of this.indicatorPaths) {
+        if (pinned.has(path)) continue;
+        const self = fileItems[path] && fileItems[path].selfEl;
+        const mark = self && self.querySelector(":scope > .crisp-fe-order-pin");
+        if (mark) mark.remove();
+      }
+      for (const path of pinned) {
+        const self = fileItems[path] && fileItems[path].selfEl;
+        if (!self || self.querySelector(":scope > .crisp-fe-order-pin")) continue;
+        const mark = self.ownerDocument.createElement("span");
+        mark.className = "crisp-fe-order-pin";
+        mark.setAttribute("aria-label", "已置顶");
+        setIcon(mark, "pin");
+        self.appendChild(mark);
+      }
+    }
+    this.indicatorPaths = pinned;
+  }
+
+  attach(container) {
+    if (this.containers.has(container)) return;
+    const onDragOver = (event) => this.onDragOver(event, container);
+    const onDrop = (event) => this.onDrop(event, container);
+    const onDragLeave = (event) => {
+      if (!event.relatedTarget || !container.contains(event.relatedTarget)) this.clearDrop();
+    };
+    const onDragEnd = () => this.clearDrop();
+    container.addEventListener("dragenter", onDragOver, true);
+    container.addEventListener("dragover", onDragOver, true);
+    container.addEventListener("drop", onDrop, true);
+    container.addEventListener("dragleave", onDragLeave);
+    container.addEventListener("dragend", onDragEnd);
+    this.containers.set(container, () => {
+      container.removeEventListener("dragenter", onDragOver, true);
+      container.removeEventListener("dragover", onDragOver, true);
+      container.removeEventListener("drop", onDrop, true);
+      container.removeEventListener("dragleave", onDragLeave);
+      container.removeEventListener("dragend", onDragEnd);
+    });
+  }
+
+  detachMissing(containers) {
+    for (const [container, cleanup] of Array.from(this.containers.entries())) {
+      if (containers.has(container) && isConnectedToOwnerDocument(container)) continue;
+      cleanup();
+      this.containers.delete(container);
+    }
+  }
+
+  detachAll() {
+    for (const cleanup of this.containers.values()) cleanup();
+    this.containers.clear();
+    this.clearDrop();
+  }
+
+  draggedFiles() {
+    const draggable = this.app.dragManager && this.app.dragManager.draggable;
+    if (!draggable) return null;
+    let files = null;
+    if (draggable.type === "files") files = Array.from(draggable.files || []);
+    else if (draggable.type === "file" || draggable.type === "folder") files = [draggable.file];
+    if (!files || !files.length || files.some((file) => !file || !file.path || file.path === "/")) return null;
+    // Rows inside a dragged folder travel with it.
+    return files.filter((file) => !files.some((other) => other !== file && file.path.startsWith(`${other.path}/`)));
+  }
+
+  rowAt(event, container) {
+    const hovered = event.target && typeof event.target.closest === "function" ? event.target.closest(".tree-item-self") : null;
+    if (hovered && container.contains(hovered) && hovered.dataset.path && hovered.dataset.path !== "/") return hovered;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const row of container.querySelectorAll(".tree-item-self[data-path]")) {
+      if (row.dataset.path === "/") continue;
+      const rect = row.getBoundingClientRect();
+      if (rect.height <= 0) continue;
+      const distance = event.clientY < rect.top ? rect.top - event.clientY : Math.max(0, event.clientY - rect.bottom);
+      if (distance < bestDistance) {
+        best = row;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  resolveDrop(event, container) {
+    const files = this.draggedFiles();
+    if (!files) return null;
+    const row = this.rowAt(event, container);
+    if (!row) return null;
+    const rowPath = row.dataset.path;
+    const isFolder = row.classList.contains("nav-folder-title");
+    const expanded = isFolder && Boolean(row.parentElement) && !row.parentElement.classList.contains("is-collapsed");
+    const rect = row.getBoundingClientRect();
+    const zone = crispDropZone(rect.top, rect.height, event.clientY, isFolder, expanded);
+    if (zone === "inside") return null;
+    const folderPath = zone === "inside-start" ? rowPath : crispOrderParent(rowPath);
+    const anchor = zone === "inside-start" ? null : crispOrderName(rowPath);
+    const side = zone === "after" ? "after" : "before";
+    if (files.some((file) => file.path === rowPath && anchor !== null)) return null;
+    if (files.some((file) => crispOrderMatches(folderPath, file.path))) return null;
+    const vault = this.app.vault;
+    const folder = folderPath === "/" ? vault.getRoot() : vault.getAbstractFileByPath(folderPath);
+    if (!folder || !Array.isArray(folder.children)) return null;
+    // Pinned rows only trade places with pinned rows; the rest stay below them.
+    const pinned = new Set(this.order.pinned);
+    const movingPinned = new Set(files.map((file) => pinned.has(file.path)));
+    if (movingPinned.size > 1) return null;
+    if (anchor !== null && pinned.has(rowPath) !== movingPinned.has(true)) return null;
+    return { files, folder, folderPath, anchor, side, zone, row };
+  }
+
+  onDragOver(event, container) {
+    const target = this.isActive() ? this.resolveDrop(event, container) : null;
+    if (!target) {
+      this.clearDrop();
+      return;
+    }
+    // Taking the event first keeps Obsidian from highlighting a folder for this spot,
+    // and forgetting its last target stops a pending hover-expand of that folder.
+    event.preventDefault();
+    for (const view of this.explorerViews()) {
+      if (view.lastDropTargetEl) view.lastDropTargetEl = null;
+    }
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    this.showDrop(target, container);
+  }
+
+  onDrop(event, container) {
+    const target = this.isActive() ? this.resolveDrop(event, container) : null;
+    this.clearDrop();
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.commitDrop(target).catch((error) => {
+      console.error("Crisp File Explorer could not reorder", error);
+      new Notice("Crisp File Explorer：顺序没有调整成功，请重试");
+    });
+  }
+
+  showDrop(target, container) {
+    const ownerDocument = container.ownerDocument;
+    if (!this.indicator || this.indicator.ownerDocument !== ownerDocument || !this.indicator.isConnected) {
+      if (this.indicator) this.indicator.remove();
+      this.indicator = ownerDocument.createElement("div");
+      this.indicator.className = "crisp-fe-order-indicator";
+      ownerDocument.body.appendChild(this.indicator);
+    }
+    const box = container.getBoundingClientRect();
+    const rowRect = target.row.getBoundingClientRect();
+    const inner = target.row.querySelector(".tree-item-inner") || target.row;
+    let left = inner.getBoundingClientRect().left;
+    let top = target.side === "after" ? rowRect.bottom : rowRect.top;
+    if (target.zone === "inside-start") {
+      top = rowRect.bottom;
+      const child = target.row.parentElement && target.row.parentElement.querySelector(":scope > .tree-item-children .tree-item-inner");
+      left = child ? child.getBoundingClientRect().left : left + 16;
+    }
+    left = Math.max(box.left, left - 4);
+    Object.assign(this.indicator.style, {
+      left: `${left}px`,
+      top: `${Math.round(top - 1)}px`,
+      width: `${Math.max(24, box.right - left - 8)}px`,
+    });
+  }
+
+  clearDrop() {
+    if (this.indicator) this.indicator.remove();
+    this.indicator = null;
+  }
+
+  availablePath(file, folderPath) {
+    const vault = this.app.vault;
+    const target = folderPath === "/" ? file.name : `${folderPath}/${file.name}`;
+    const taken = typeof vault.getAbstractFileByPathInsensitive === "function"
+      ? vault.getAbstractFileByPathInsensitive(target)
+      : vault.getAbstractFileByPath(target);
+    if (!taken) return target;
+    if (Array.isArray(file.children)) return vault.getAvailablePath(target);
+    return vault.getAvailablePath(target.slice(0, target.length - file.extension.length - 1), file.extension);
+  }
+
+  async commitDrop({ files, folder, folderPath, anchor, side }) {
+    const plans = files.map((file) => {
+      const sameFolder = crispOrderParent(file.path) === folderPath;
+      const newPath = sameFolder ? file.path : this.availablePath(file, folderPath);
+      return { file, newPath, oldParent: crispOrderParent(file.path), oldName: file.name, newName: crispOrderName(newPath) };
+    });
+    const view = this.explorerViews()[0];
+    const shown = view ? view.getSortedFolderItems(folder).map((item) => item.file.name) : folder.children.map((child) => child.name);
+    const folders = { ...this.order.folders };
+    for (const plan of plans) {
+      if (plan.oldParent === folderPath || !folders[plan.oldParent]) continue;
+      folders[plan.oldParent] = folders[plan.oldParent].filter((name) => name !== plan.oldName);
+    }
+    folders[folderPath] = crispReorderNames(shown, plans.map((plan) => plan.newName), anchor, side);
+    this.order = normalizeExplorerOrder({ ...this.order, folders });
+    this.requestSort();
+    const saved = this.plugin.saveSettings();
+    for (const plan of plans) {
+      if (plan.newPath !== plan.file.path) await this.app.fileManager.renameFile(plan.file, plan.newPath);
+    }
+    await saved;
+  }
+
+  destroy() {
+    this.destroyed = true;
+    if (this.sortTimer) window.clearTimeout(this.sortTimer);
+    this.sortTimer = null;
+    const pending = this.flushSave();
+    this.detachAll();
+    this.unpatch();
+    this.sortNow();
+    return pending;
+  }
+}
+
 module.exports = class CrispFileExplorerPlugin extends Plugin {
   async onload() {
     this.unloading = false;
@@ -4739,6 +5376,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.layoutReady = false;
     this.licenseCheckSeq = 0;
     await this.loadSettings();
+    this.explorerOrder = new CrispExplorerOrder(this);
     crispRegisterIcons();
     this.addSettingTab(new CrispFileExplorerSettingTab(this.app, this));
 
@@ -4821,8 +5459,11 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     }
     this.enableDocument(getOwnerDocument(this.app.workspace.containerEl));
     if (!this.layoutReady || this.unloading) return;
-    if (this.runtimeStarted) this.scheduleRefresh({ immediate: true, reveal: true });
-    else this.startRuntime();
+    if (this.runtimeStarted) {
+      this.scheduleRefresh({ immediate: true, reveal: true });
+      this.explorerOrder.sync();
+      this.explorerOrder.requestSort();
+    } else this.startRuntime();
   }
 
   teardownViews() {
@@ -4845,6 +5486,10 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.controllers?.clear();
     for (const browser of this.folderBrowsers?.values() || []) browser.destroy();
     this.folderBrowsers?.clear();
+    if (this.explorerOrder && !this.explorerOrder.destroyed) {
+      this.explorerOrder.detachAll();
+      this.explorerOrder.sortNow();
+    }
   }
 
   async setDualPaneEnabled(enabled) {
@@ -4924,13 +5569,18 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("window-close", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       this.rewriteActivityPath(oldPath, file && file.path);
+      this.explorerOrder.onRename(file, oldPath);
     }));
     this.registerEvent(this.app.vault.on("delete", (file) => {
       this.rewriteActivityPath(file && file.path, null);
+      this.explorerOrder.onDelete(file);
     }));
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       this.addCrispRailMenuItem(menu, file);
+      this.explorerOrder.addMenuItems(menu, file);
     }));
+    this.registerInterval(window.setInterval(() => this.explorerOrder.sync(), ORDER_SYNC_INTERVAL_MS));
+    this.explorerOrder.sync();
     this.registerDomEvent(window, "resize", () => this.scheduleRefresh(), { passive: true });
 
     this.observer = new MutationObserver(() => this.scheduleRefresh());
@@ -4945,6 +5595,8 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
 
   onunload() {
     this.unloading = true;
+    const pendingOrderSave = this.explorerOrder && this.explorerOrder.destroy();
+    if (pendingOrderSave) pendingOrderSave.catch((error) => console.debug("Crisp File Explorer final order save failed", error));
     const pendingSave = this.flushActivitySave();
     if (pendingSave) pendingSave.catch((error) => console.debug("Crisp File Explorer final save failed", error));
     this.audio.destroy().catch((error) => console.debug("Crisp File Explorer audio cleanup failed", error));
@@ -4960,6 +5612,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
     this.settings.orbStyle = normalizeOrbStyle(this.settings.orbStyle);
     this.settings.soundStyle = normalizeSoundStyle(this.settings.soundStyle);
     this.settings.activity = normalizeActivity(this.settings.activity);
+    this.settings.explorerOrder = normalizeExplorerOrder(this.settings.explorerOrder);
     this.ensureTodayActivity();
   }
 
@@ -5485,6 +6138,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
         else this.folderBrowsers.get(container).refresh();
       }
       this.enableDocument(getOwnerDocument(container));
+      this.explorerOrder?.attach(container);
       if (!this.controllers.has(container)) {
         const controller = new FileExplorerRail(this, container);
         this.controllers.set(container, controller);
@@ -5509,6 +6163,7 @@ module.exports = class CrispFileExplorerPlugin extends Plugin {
         this.folderBrowsers.delete(container);
       }
     }
+    this.explorerOrder?.detachMissing(containers);
 
     const activeDocuments = new Set(Array.from(containers, (container) => getOwnerDocument(container)));
     activeDocuments.add(getOwnerDocument(this.app.workspace.containerEl));

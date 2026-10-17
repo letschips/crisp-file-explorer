@@ -1,6 +1,6 @@
 # Crisp File Explorer 维护说明
 
-当前版本：v0.4.9
+当前版本：v0.5.0
 
 作者：letschips（小红书博主）
 
@@ -13,6 +13,12 @@
 - 动画帧只更新 orb 附近的刻度与标题，普通滚动不会重新测量整棵文件树。
 - 每个文件浏览器面板拥有独立控制器，并支持 Obsidian 独立窗口中的文件浏览器。
 - 智能磁吸综合近期使用与打开频率，固定点优先，总数最多 8 个。
+
+## v0.5.0 维护范围
+
+- 自定义顺序包装文件浏览器原型上的 `getSortedFolderItems`：按 `explorerOrder.folders[文件夹路径]` 的名称列表排序，置顶优先，未登记名称保留原生顺序并放在一端。Flexplorer 启用时包装直接放行；它停用（会把原型还原为原生函数）后由定时 `sync()` 重新包装并自动导入一次 `flexplorer/data.json`。
+- 拖放在 `.nav-files-container` 捕获阶段处理 `dragenter` / `dragover` / `drop`：行边缘的落点由本插件 `preventDefault()` 接管（Obsidian 的 `handleDrop` 遇到 `defaultPrevented` 会跳过），并清空 `view.lastDropTargetEl` 取消原生悬停展开；文件夹中间带不接管，仍走原生移入。
+- 改名事件对文件夹会逐个上报子项，`crispRenameInOrder` / `crispDeleteFromOrder` 无变化时返回同一对象，避免大量无谓写盘。
 
 ## v0.4.9 维护范围
 

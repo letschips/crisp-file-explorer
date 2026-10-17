@@ -971,3 +971,29 @@ body.crisp-file-explorer-enabled .crisp-fe-name-error { color: var(--text-error)
 /* Hide the folder pane scrollbar while retaining scroll and rail interaction. */
 body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"] .nav-files-container.crisp-fe-folder-tree { scrollbar-width: none; }
 body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explorer"] .nav-files-container.crisp-fe-folder-tree::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* Custom order: drop line between rows and the pin mark on pinned rows. */
+.crisp-fe-order-indicator {
+  position: fixed;
+  z-index: var(--layer-tooltip);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  pointer-events: none;
+}
+
+.workspace-leaf-content[data-type="file-explorer"] .tree-item-self > .crisp-fe-order-pin {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--size-2-2);
+  color: var(--icon-color);
+  opacity: 0.35;
+}
+
+.workspace-leaf-content[data-type="file-explorer"] .tree-item-self > .crisp-fe-order-pin svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+}
