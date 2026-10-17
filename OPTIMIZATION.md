@@ -1,6 +1,6 @@
 # Crisp File Explorer 维护说明
 
-当前版本：v0.5.1
+当前版本：v0.5.2
 
 作者：letschips（小红书博主）
 
@@ -13,6 +13,13 @@
 - 动画帧只更新 orb 附近的刻度与标题，普通滚动不会重新测量整棵文件树。
 - 每个文件浏览器面板拥有独立控制器，并支持 Obsidian 独立窗口中的文件浏览器。
 - 智能磁吸综合近期使用与打开频率，固定点优先，总数最多 8 个。
+
+## v0.5.2 维护范围
+
+- `resolveDrop` 区分三种结果：`null`（交给原生，仅文件夹中间带等）、`{ blocked: true }`（置顶规则禁止：捕获阶段 `stopPropagation()`、不 `preventDefault()`，drop 不被允许）、排序目标。
+- `commitDrop` 先逐个移动、每次移动前重新取可用名，再按实际落位的名称写入目标顺序；旧位置由 rename 事件清理，失败条目保留原记录。
+- 路径字典用 `Object.create(null)`，读取走 `crispOwnList`（own property + 数组校验）。
+- `tests/custom-order.test.js` 用内存 vault 覆盖批量同名、移动失败、根目录菜单和禁止落点的事件路由；2026-10-17 审计复现脚本在真实 renderer 中 6 项均不再复现。
 
 ## v0.5.1 维护范围
 

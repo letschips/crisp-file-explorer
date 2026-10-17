@@ -4791,13 +4791,25 @@ function crispOrderMatches(path, root) {
   return path === root || path.startsWith(`${root}/`);
 }
 
+// Folder paths are user data: a folder may be named "constructor" or "__proto__", so path
+// dictionaries have no prototype and are read through own properties only.
+function crispOwnList(folders, path) {
+  if (!folders || !Object.prototype.hasOwnProperty.call(folders, path)) return null;
+  const list = folders[path];
+  return Array.isArray(list) ? list : null;
+}
+
+function crispCopyFolders(folders) {
+  return Object.assign(Object.create(null), folders);
+}
+
 function crispUniqueStrings(value) {
   return Array.isArray(value) ? Array.from(new Set(value.filter((item) => typeof item === "string" && item))) : [];
 }
 
 function normalizeExplorerOrder(value) {
   const source = value && typeof value === "object" ? value : {};
-  const folders = {};
+  const folders = Object.create(null);
   if (source.folders && typeof source.folders === "object" && !Array.isArray(source.folders)) {
     for (const [folder, list] of Object.entries(source.folders)) {
       const names = crispUniqueStrings(list);
@@ -4814,7 +4826,7 @@ function normalizeExplorerOrder(value) {
 }
 
 function crispOrderFolderItems(items, folderPath, order) {
-  const list = order.folders[folderPath];
+  const list = crispOwnList(order.folders, folderPath);
   const pinned = order.pinned.length ? new Set(order.pinned) : null;
   const isPinned = (item) => Boolean(pinned && pinned.has(item && item.file && item.file.path));
   if (!list && !items.some(isPinned)) return items;
@@ -4849,20 +4861,20 @@ function crispRenameInOrder(order, oldPath, newPath) {
   const oldName = crispOrderName(oldPath);
   const newName = crispOrderName(newPath);
   const folderKeys = Object.keys(order.folders).filter((folder) => crispOrderMatches(folder, oldPath));
-  const parentList = order.folders[oldParent];
+  const parentList = crispOwnList(order.folders, oldParent);
   const listed = Boolean(parentList && parentList.includes(oldName));
   const pinnedHit = order.pinned.some((path) => crispOrderMatches(path, oldPath));
   if (!folderKeys.length && !listed && !pinnedHit) return order;
 
-  const kept = {};
-  const moved = {};
+  const kept = Object.create(null);
+  const moved = Object.create(null);
   for (const [folder, list] of Object.entries(order.folders)) {
     if (crispOrderMatches(folder, oldPath)) moved[newPath + folder.slice(oldPath.length)] = list.slice();
     else kept[folder] = list.slice();
   }
-  const folders = { ...kept, ...moved };
+  const folders = Object.assign(Object.create(null), kept, moved);
   if (listed) {
-    const list = folders[oldParent];
+    const list = crispOwnList(folders, oldParent);
     const index = list.indexOf(oldName);
     if (oldParent === newParent && !list.includes(newName)) list[index] = newName;
     else list.splice(index, 1);
@@ -4877,10 +4889,10 @@ function crispDeleteFromOrder(order, path) {
   const parent = crispOrderParent(path);
   const name = crispOrderName(path);
   const touched = Object.keys(order.folders).some((folder) => crispOrderMatches(folder, path))
-    || Boolean(order.folders[parent] && order.folders[parent].includes(name))
+    || Boolean(crispOwnList(order.folders, parent) && crispOwnList(order.folders, parent).includes(name))
     || order.pinned.some((pinnedPath) => crispOrderMatches(pinnedPath, path));
   if (!touched) return order;
-  const folders = {};
+  const folders = Object.create(null);
   for (const [folder, list] of Object.entries(order.folders)) {
     if (crispOrderMatches(folder, path)) continue;
     folders[folder] = folder === parent ? list.filter((item) => item !== name) : list.slice();
@@ -4892,7 +4904,7 @@ function crispDeleteFromOrder(order, path) {
 function crispImportFlexplorer(data) {
   const items = data && typeof data === "object" ? data.items : null;
   if (!items || typeof items !== "object" || Array.isArray(items)) return null;
-  const folders = {};
+  const folders = Object.create(null);
   const pinned = [];
   for (const [path, item] of Object.entries(items)) {
     if (!item || typeof item !== "object") continue;
@@ -4912,6 +4924,22 @@ function crispDropZone(top, height, y, isFolder, expanded) {
   if (ratio < 0.25) return "before";
   if (ratio > 0.75) return expanded ? "inside-start" : "after";
   return "inside";
+}
+
+// Obsidian-style free name ("same 1.md"); a name without an extension keeps every character.
+function crispAvailableTarget(folderPath, file, isTaken) {
+  const prefix = folderPath === "/" ? "" : `${folderPath}/`;
+  const target = prefix + file.name;
+  if (!isTaken(target)) return target;
+  const suffix = !Array.isArray(file.children) && file.extension ? `.${file.extension}` : "";
+  const stem = suffix && file.name.endsWith(suffix) && file.name.length > suffix.length
+    ? file.name.slice(0, file.name.length - suffix.length)
+    : file.name;
+  const extension = stem === file.name ? "" : suffix;
+  for (let index = 1; ; index += 1) {
+    const candidate = `${prefix}${stem} ${index}${extension}`;
+    if (!isTaken(candidate)) return candidate;
+  }
 }
 
 class CrispExplorerOrder {
@@ -5095,13 +5123,16 @@ class CrispExplorerOrder {
   }
 
   addMenuItems(menu, file) {
-    if (!this.isActive() || !menu || typeof menu.addItem !== "function" || !file || !file.path || file.path === "/") return;
-    const pinned = this.order.pinned.includes(file.path);
-    menu.addItem((item) => item
-      .setTitle(pinned ? "取消文件列表置顶" : "在文件列表置顶")
-      .setIcon(pinned ? "arrow-down-from-line" : "arrow-up-to-line")
-      .onClick(() => this.setPinned(file.path, !pinned)));
-    if (Array.isArray(file.children) && this.order.folders[file.path]) {
+    if (!this.isActive() || !menu || typeof menu.addItem !== "function" || !file || !file.path) return;
+    // The vault root has nothing to be pinned above, but its own order can still be reset.
+    if (file.path !== "/") {
+      const pinned = this.order.pinned.includes(file.path);
+      menu.addItem((item) => item
+        .setTitle(pinned ? "取消文件列表置顶" : "在文件列表置顶")
+        .setIcon(pinned ? "arrow-down-from-line" : "arrow-up-to-line")
+        .onClick(() => this.setPinned(file.path, !pinned)));
+    }
+    if (Array.isArray(file.children) && crispOwnList(this.order.folders, file.path)) {
       menu.addItem((item) => item
         .setTitle("恢复文件夹默认顺序")
         .setIcon("arrow-down-up")
@@ -5118,7 +5149,7 @@ class CrispExplorerOrder {
   }
 
   async resetFolder(path) {
-    const folders = { ...this.order.folders };
+    const folders = crispCopyFolders(this.order.folders);
     delete folders[path];
     this.order = normalizeExplorerOrder({ ...this.order, folders });
     this.requestSort();
@@ -5234,10 +5265,12 @@ class CrispExplorerOrder {
     const folder = folderPath === "/" ? vault.getRoot() : vault.getAbstractFileByPath(folderPath);
     if (!folder || !Array.isArray(folder.children)) return null;
     // Pinned rows only trade places with pinned rows; the rest stay below them.
+    // An edge spot the pin rule forbids is refused outright; handing it to Obsidian would
+    // turn "place next to this folder" into "move into this folder".
     const pinned = new Set(this.order.pinned);
     const movingPinned = new Set(files.map((file) => pinned.has(file.path)));
-    if (movingPinned.size > 1) return null;
-    if (anchor !== null && pinned.has(rowPath) !== movingPinned.has(true)) return null;
+    if (movingPinned.size > 1) return { blocked: true };
+    if (anchor !== null && pinned.has(rowPath) !== movingPinned.has(true)) return { blocked: true };
     return { files, folder, folderPath, anchor, side, zone, row };
   }
 
@@ -5247,14 +5280,30 @@ class CrispExplorerOrder {
       this.clearDrop();
       return;
     }
+    if (target.blocked) {
+      // Not calling preventDefault leaves the drop disallowed; stopping here keeps Obsidian's
+      // folder handler from accepting it.
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+      this.clearDrop();
+      this.clearNativeDropState();
+      return;
+    }
     // Taking the event first keeps Obsidian from highlighting a folder for this spot,
     // and forgetting its last target stops a pending hover-expand of that folder.
     event.preventDefault();
+    this.clearNativeDropState();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    this.showDrop(target, container);
+  }
+
+  clearNativeDropState() {
     for (const view of this.explorerViews()) {
       if (view.lastDropTargetEl) view.lastDropTargetEl = null;
     }
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    this.showDrop(target, container);
+    const manager = this.app.dragManager;
+    if (manager && typeof manager.updateHover === "function") manager.updateHover(null, null);
+    if (manager && typeof manager.setAction === "function") manager.setAction(null);
   }
 
   onDrop(event, container) {
@@ -5263,6 +5312,7 @@ class CrispExplorerOrder {
     if (!target) return;
     event.preventDefault();
     event.stopPropagation();
+    if (target.blocked) return;
     this.commitDrop(target).catch((error) => {
       console.error("Crisp File Explorer could not reorder", error);
       new Notice("Crisp File Explorer：顺序没有调整成功，请重试");
@@ -5309,36 +5359,40 @@ class CrispExplorerOrder {
 
   availablePath(file, folderPath) {
     const vault = this.app.vault;
-    const target = folderPath === "/" ? file.name : `${folderPath}/${file.name}`;
-    const taken = typeof vault.getAbstractFileByPathInsensitive === "function"
-      ? vault.getAbstractFileByPathInsensitive(target)
-      : vault.getAbstractFileByPath(target);
-    if (!taken) return target;
-    if (Array.isArray(file.children)) return vault.getAvailablePath(target);
-    return vault.getAvailablePath(target.slice(0, target.length - file.extension.length - 1), file.extension);
+    const isTaken = (path) => Boolean(typeof vault.getAbstractFileByPathInsensitive === "function"
+      ? vault.getAbstractFileByPathInsensitive(path)
+      : vault.getAbstractFileByPath(path));
+    return crispAvailableTarget(folderPath, file, isTaken);
   }
 
+  // Moves first, then records only what actually landed: a failed move keeps its old place,
+  // and the rename events have already cleared the old slots of the files that did move.
   async commitDrop({ files, folder, folderPath, anchor, side }) {
-    const plans = files.map((file) => {
-      const sameFolder = crispOrderParent(file.path) === folderPath;
-      const newPath = sameFolder ? file.path : this.availablePath(file, folderPath);
-      return { file, newPath, oldParent: crispOrderParent(file.path), oldName: file.name, newName: crispOrderName(newPath) };
-    });
     const view = this.explorerViews()[0];
     const shown = view ? view.getSortedFolderItems(folder).map((item) => item.file.name) : folder.children.map((child) => child.name);
-    const folders = { ...this.order.folders };
-    for (const plan of plans) {
-      if (plan.oldParent === folderPath || !folders[plan.oldParent]) continue;
-      folders[plan.oldParent] = folders[plan.oldParent].filter((name) => name !== plan.oldName);
+    const landed = [];
+    let failed = 0;
+    for (const file of files) {
+      if (crispOrderParent(file.path) !== folderPath) {
+        // Chosen right before each move, so files moved earlier in this batch count as taken.
+        const target = this.availablePath(file, folderPath);
+        try {
+          await this.app.fileManager.renameFile(file, target);
+        } catch (error) {
+          console.error("Crisp File Explorer could not move", file.path, error);
+        }
+      }
+      if (crispOrderParent(file.path) === folderPath) landed.push(file.name);
+      else failed += 1;
     }
-    folders[folderPath] = crispReorderNames(shown, plans.map((plan) => plan.newName), anchor, side);
-    this.order = normalizeExplorerOrder({ ...this.order, folders });
-    this.requestSort();
-    const saved = this.plugin.saveSettings();
-    for (const plan of plans) {
-      if (plan.newPath !== plan.file.path) await this.app.fileManager.renameFile(plan.file, plan.newPath);
+    if (landed.length) {
+      const folders = crispCopyFolders(this.order.folders);
+      folders[folderPath] = crispReorderNames(shown, landed, anchor, side);
+      this.order = normalizeExplorerOrder({ ...this.order, folders });
+      this.requestSort();
+      await this.plugin.saveSettings();
     }
-    await saved;
+    if (failed) new Notice(`Crisp File Explorer：${landed.length} 个已移到位，${failed} 个没有移动，原位置和顺序保持不变`);
   }
 
   destroy() {

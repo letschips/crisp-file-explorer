@@ -1,4 +1,4 @@
-# Crisp File Explorer v0.5.1 测试清单
+# Crisp File Explorer v0.5.2 测试清单
 
 作者：letschips（小红书博主）
 
@@ -6,7 +6,7 @@
 
 - [ ] `node --check main.js` 通过。
 - [ ] `node --test tests/regression.test.js` 全部通过。
-- [ ] `manifest.json` 版本为 `0.5.1`。
+- [ ] `manifest.json` 版本为 `0.5.2`。
 - [ ] `node scripts/rail-performance.e2e.cjs --output=<path>` 全部通过并保存 JSON 工件。
 - [ ] 约 30fps 及掉帧时，小球仍保持有界并到达目标；按住不动不持续重绘，边缘滚动仍持续推进。
 - [ ] `assets/` 中不存在未引用的旧素材。
@@ -41,6 +41,7 @@
 - [ ] 拖到文件夹标题中间仍由 Obsidian 移入文件夹；拖到行边缘时文件夹不悬停展开。
 - [ ] 右键置顶后条目排到同级最前并显示图钉；取消置顶后回到原位置。
 - [ ] 改名保持位置，文件夹改名后子文件夹顺序和置顶跟随；删除后数据被清理。
+- [ ] 普通条目拖到置顶条目边缘时显示禁止落点，松手不移动；同名多选移动得到 `same 1.md`；无扩展名文件重名得到 `LICENSE 1`。
 - [ ] Flexplorer 启用时本插件不改变排序；停用 Flexplorer 后自动导入一次顺序与置顶。
 - [ ] 清空授权码或关闭「拖动调整顺序」后恢复 Obsidian 默认排序，已保存顺序不丢。
 
