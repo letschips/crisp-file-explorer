@@ -4,8 +4,7 @@
 
 ## 自动检查
 
-- [ ] `node --check main.js` 通过。
-- [ ] `node --test tests/regression.test.js` 全部通过。
+- [ ] `npm run check`（从 `src/` 构建 `main.js` 并运行 `tests/*.test.js`）全部通过。
 - [ ] `manifest.json` 版本为 `0.5.2`。
 - [ ] `node scripts/rail-performance.e2e.cjs --output=<path>` 全部通过并保存 JSON 工件。
 - [ ] 约 30fps 及掉帧时，小球仍保持有界并到达目标；按住不动不持续重绘，边缘滚动仍持续推进。

@@ -169,20 +169,29 @@
 在插件目录执行：
 
 ```bash
-node --check main.js
-node --test tests/regression.test.js
+npm install
+npm run check
 ```
+
+`npm run check` 先用 esbuild 从 `src/` 生成 `main.js`，再运行 `tests/*.test.js`。`main.js` 是构建产物，修改请改 `src/`。
 
 发布前还需要在 Obsidian 中重载插件，确认主窗口和独立窗口的文件浏览器均能显示、拖动和清理 orb，并检查开发者错误日志。
 
 ## 文件职责
 
-- `main.js`：插件运行逻辑。
+- `src/`：插件源码，按功能分模块。
+  - `main.js`：插件类、生命周期、事件与控制器管理。
+  - `rail/`：刻度轨道与 orb（`rail.js`）、几何与弹簧（`geometry.js`）、拖动音效（`audio.js`）。
+  - `orb/`：小球与音效样式解析（`styles.js`）；`assets.generated.js` 由 `scripts/inline-orb-assets.mjs` 生成。
+  - `dual-pane/`：双栏浏览器（`folder-browser.js`）与纯函数（`helpers.js`）。
+  - `order/`：自定义顺序与置顶（`explorer-order.js`）与纯函数（`helpers.js`）。
+  - `license.js`、`settings.js`、`settings-tab.js`、`activity.js`、`constants.js`、`dom/owner-window.js`、`obsidian.js`。
+- `main.js`：esbuild 构建产物（不压缩、不降级语法），随仓库提交并作为发布文件。
 - `styles.css`：轨道、orb、设置页及状态样式。
 - `manifest.json`：插件身份与版本。
 - `assets/`：生成内联 Orb 的源图片和 SVG，运行时不直接读取。
 - `data.json`：当前 vault 的用户设置与活动记录，不应放入分享包。
-- `tests/regression.test.js`：自动回归测试。
+- `tests/`：自动回归测试；读取源码文本的检查读 `src/`，运行时检查加载构建后的 `main.js`。
 - `CHANGELOG.md`：版本变更记录。
 
 灵感来源：[BubblePtr/ZenBlog CrispToc](https://github.com/BubblePtr/ZenBlog/blob/main/src/shared/components/navigation/CrispToc.client.tsx)
