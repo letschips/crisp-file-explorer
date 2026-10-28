@@ -12,9 +12,9 @@ test('orb generation updates existing artwork and is repeatable without losing r
   try {
     fs.cpSync(path.join(root, 'scripts'), path.join(temp, 'scripts'), { recursive: true });
     fs.cpSync(path.join(root, 'assets'), path.join(temp, 'assets'), { recursive: true });
-    const target = path.join(temp, 'src', 'main.js');
+    const target = path.join(temp, 'src', 'orb', 'assets.generated.js');
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(path.join(root, 'src', 'main.js'), target);
+    fs.copyFileSync(path.join(root, 'src', 'orb', 'assets.generated.js'), target);
     fs.appendFileSync(target, '\n// Preserve unrelated local edits.\n');
     const asset = path.join(temp, 'assets', 'character6.svg');
     fs.writeFileSync(asset, fs.readFileSync(asset, 'utf8').replace('#fbf8f6', '#abcdef'));

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = resolve(projectRoot, "assets");
-const mainPath = resolve(projectRoot, "src", "main.js");
+const mainPath = resolve(projectRoot, "src", "orb", "assets.generated.js");
 
 const ASSET_STYLES = {
   "alfresco.svg": "alfresco",
@@ -127,27 +127,6 @@ for (const [filename, style] of Object.entries(ASSET_STYLES)) {
 }
 main = main.slice(0, svgBlock.start) + svgBody.trimEnd()
   + `\n${svgEntries.join("\n")}\n};` + main.slice(svgBlock.end);
-
-// 3. Point the orb renderer at the inline data URLs.
-const expectedReplacements = [
-  [
-    "const imagePath = IMAGE_ORB_ASSETS[style];",
-    "const imageDataUrl = ORB_IMAGE_DATA_URLS[style];",
-  ],
-  ["if (imagePath) {", "if (imageDataUrl) {"],
-  [
-    "img.src = this.plugin.getResourceUrl(imagePath);",
-    "img.src = imageDataUrl;",
-  ],
-];
-for (const [from, to] of expectedReplacements) {
-  const fromCount = main.split(from).length - 1;
-  if (fromCount === 1) {
-    main = main.split(from).join(to);
-  } else if (fromCount !== 0 || main.split(to).length - 1 !== 1) {
-    throw new Error(`expected exactly 1 occurrence of "${from}", found ${fromCount}`);
-  }
-}
 
 if (main.includes("IMAGE_ORB_ASSETS")) {
   throw new Error("IMAGE_ORB_ASSETS still referenced after transform");
