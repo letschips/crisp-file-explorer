@@ -12,19 +12,21 @@ test('orb generation updates existing artwork and is repeatable without losing r
   try {
     fs.cpSync(path.join(root, 'scripts'), path.join(temp, 'scripts'), { recursive: true });
     fs.cpSync(path.join(root, 'assets'), path.join(temp, 'assets'), { recursive: true });
-    fs.copyFileSync(path.join(root, 'main.js'), path.join(temp, 'main.js'));
-    fs.appendFileSync(path.join(temp, 'main.js'), '\n// Preserve unrelated local edits.\n');
+    const target = path.join(temp, 'src', 'main.js');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(root, 'src', 'main.js'), target);
+    fs.appendFileSync(target, '\n// Preserve unrelated local edits.\n');
     const asset = path.join(temp, 'assets', 'character6.svg');
     fs.writeFileSync(asset, fs.readFileSync(asset, 'utf8').replace('#fbf8f6', '#abcdef'));
     const run = () => execFileSync(process.execPath, [path.join(temp, 'scripts', 'inline-orb-assets.mjs')]);
     run();
-    const first = fs.readFileSync(path.join(temp, 'main.js'), 'utf8');
+    const first = fs.readFileSync(target, 'utf8');
     assert.match(first, /#abcdef/);
     assert.match(first, /Preserve unrelated local edits/);
     assert.equal((first.match(/^\s*character6: `/gm) || []).length, 1);
     assert.match(first, /^\s*dragonball: `/m);
     run();
-    assert.equal(fs.readFileSync(path.join(temp, 'main.js'), 'utf8'), first);
+    assert.equal(fs.readFileSync(target, 'utf8'), first);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

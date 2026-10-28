@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = resolve(projectRoot, "assets");
-const mainPath = resolve(projectRoot, "main.js");
+const mainPath = resolve(projectRoot, "src", "main.js");
 
 const ASSET_STYLES = {
   "alfresco.svg": "alfresco",

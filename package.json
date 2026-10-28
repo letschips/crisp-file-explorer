@@ -1,0 +1,17 @@
+{
+  "name": "crisp-file-explorer",
+  "version": "0.5.2",
+  "private": true,
+  "description": "Adds a CrispToc-style animated rail, spring orb, and active-item motion to Obsidian's file explorer.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "test": "node --test tests/*.test.js",
+    "check": "npm run build && npm test",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

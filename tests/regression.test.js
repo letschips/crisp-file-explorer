@@ -86,13 +86,23 @@ function loadPluginRuntime(overrides = {}) {
 
   vm.runInNewContext(source, context, { filename: sourcePath });
   return {
-    PluginClass: context.module.exports,
+    PluginClass: context.module.exports.default,
     ...context.module.exports.__test,
     clearedTimers,
     scheduledTimers,
     scheduledFrames,
     context,
   };
+}
+
+// Source-text checks read src/, since main.js is reformatted by the bundler.
+function readPluginSource() {
+  const srcDir = path.join(__dirname, "..", "src");
+  return fs.readdirSync(srcDir, { recursive: true })
+    .filter((name) => name.endsWith(".js"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(srcDir, name), "utf8"))
+    .join("\n");
 }
 
 function readStyles() {
@@ -111,7 +121,7 @@ test("maintenance documents track the runtime manifest version", () => {
 });
 
 test("settings groups and plugin commands are fully localized", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const source = readPluginSource();
 
   for (const text of [
     "小球与视觉",
@@ -1339,7 +1349,7 @@ test("reduced motion also disables settings accordion transitions", () => {
 
 test("settings accordion avoids layout-property animation and delayed closing", () => {
   const css = readStyles();
-  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const source = readPluginSource();
   const createGroup = source.match(/const createGroup = \(title, description, open = false\) => \{([\s\S]*?)\n\s*const licenseGroup/);
 
   assert.ok(createGroup);
@@ -1639,7 +1649,7 @@ test("manual rail pins use a stronger dot without changing the shared rail geome
 });
 
 test("runtime workspace listeners start once, after layout ready", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const source = readPluginSource();
   assert.match(source, /onLayoutReady\(\(\)\s*=>\s*\{[\s\S]*?this\.startRuntime\(\)/);
   assert.match(source, /startRuntime\(\)\s*\{[\s\S]*?if \(this\.runtimeStarted/);
   assert.match(source, /workspace\.on\("window-open",\s*\(\)\s*=>\s*this\.scheduleRefresh\(\)\)/);
@@ -1900,7 +1910,7 @@ test("controllers from closed secondary windows are removed even if their old do
 });
 
 test("rail focus is a fixed GPU-translated gradient layer", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const source = readPluginSource();
   const css = readStyles();
   assert.match(source, /lineFocus\.className\s*=\s*"crisp-fe-line-focus"/);
   assert.match(source, /this\.lineFocus\.style\.transform\s*=\s*transform/);
@@ -1909,7 +1919,7 @@ test("rail focus is a fixed GPU-translated gradient layer", () => {
 });
 
 test("all orb artwork is bundled inline without machine-specific paths", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const source = readPluginSource();
   const inlineOrbBlock = source.match(/const ORB_SVGS\s*=\s*\{([\s\S]*?)\n\};/);
   const dataUrlBlock = source.match(/const ORB_IMAGE_DATA_URLS\s*=\s*\{([\s\S]*?)\n\};/);
   assert.ok(inlineOrbBlock);
@@ -1961,7 +1971,7 @@ test("all orb artwork is bundled inline without machine-specific paths", () => {
 });
 
 test("runtime ships inline orbs with no separate asset dependency", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const source = readPluginSource();
   const referencedAssets = Array.from(
     source.matchAll(/"(assets\/[^"]+\.(?:png|svg))"/g),
     (match) => match[1]
@@ -2949,7 +2959,7 @@ test("rail elements never get their own compositor layer (translucent windows ke
   // In a translucent Obsidian window every promoted layer can leave old frames
   // behind: hover tooltips, row highlights and tree text stay on screen after
   // they are gone from the DOM. 2D transforms still animate without promotion.
-  const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8")
+  const source = readPluginSource()
     .replace(/<svg[\s\S]*?<\/svg>/g, "");
   assert.doesNotMatch(source, /translate3d|translateZ|perspective\(/);
   assert.doesNotMatch(readStyles(), /will-change\s*:\s*transform/);
