@@ -54,7 +54,9 @@ function escapeTemplateLiteral(value) {
 }
 
 function cleanSvg(source) {
+  // Template literals read CRLF/CR as LF anyway; normalizing keeps the generated file byte-stable.
   let cleaned = source
+    .replace(/\r\n?/g, "\n")
     .replace(/<\?xml[^>]*\?>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/^[\s\S]*?(<svg)/i, "$1")

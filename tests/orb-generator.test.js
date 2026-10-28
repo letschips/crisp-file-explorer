@@ -23,6 +23,8 @@ test('orb generation updates existing artwork and is repeatable without losing r
     const first = fs.readFileSync(target, 'utf8');
     assert.match(first, /#abcdef/);
     assert.match(first, /Preserve unrelated local edits/);
+    // Several source SVGs use CRLF/CR line endings; the generated file must not carry them.
+    assert.doesNotMatch(first, /\r/);
     assert.equal((first.match(/^\s*character6: `/gm) || []).length, 1);
     assert.match(first, /^\s*dragonball: `/m);
     run();
