@@ -311,6 +311,17 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
       );
 
     new Setting(interactionBody)
+      .setName("树形连接线")
+      .setDesc("用连接线标出文件夹层级，轨道作为最外一层。只用于原生文件树，双栏浏览中不显示。")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.treeGuidesEnabled).onChange(async (value) => {
+          this.plugin.settings.treeGuidesEnabled = value;
+          await this.plugin.saveSettings();
+          this.plugin.scheduleRefresh();
+        })
+      );
+
+    new Setting(interactionBody)
       .setName("松开打开项目")
       .setDesc("松开小球时打开最近的文件，或展开/收起最近的文件夹。")
       .addToggle((toggle) =>

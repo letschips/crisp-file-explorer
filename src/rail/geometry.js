@@ -181,7 +181,9 @@ export function tickContentLeft(rail, tick) {
   for (const index of indices) {
     const item = index === undefined || !rail.items ? undefined : rail.items[index];
     if (!item || !Number.isFinite(item.contentLeft)) continue;
-    const edge = item.contentLeft + labelShiftFor(rail, index);
+    let edge = item.contentLeft + labelShiftFor(rail, index);
+    // A shifted label moves away from its tree trunk; the trunk stays put.
+    if (Number.isFinite(item.treeEdge)) edge = Math.min(edge, item.treeEdge);
     left = left === undefined ? edge : Math.min(left, edge);
   }
   return left;
@@ -208,6 +210,140 @@ export function measureRowContentLeft(el, containerRect) {
     }
   }
   return undefined;
+}
+
+// With tree guides on, the top-level folders' trunk runs just right of the
+// rail. Rows inside any folder (depth 1 and deeper; top-level rows are 0)
+// treat the trunk as their content edge, so their ticks end before it
+// instead of crossing it.
+export function treeGuideContentLeft(contentLeft, depth, rootTrunkX) {
+  if (depth < 1 || !Number.isFinite(rootTrunkX) || !Number.isFinite(contentLeft)) return contentLeft;
+  return Math.min(contentLeft, rootTrunkX);
+}
+
+export function treeRowDepth(el, container) {
+  let depth = 0;
+  for (let node = el && el.parentElement; node && node !== container; node = node.parentElement) {
+    if (node.classList && node.classList.contains("tree-item-children")) depth += 1;
+  }
+  return depth;
+}
+
+// How far a row is translated right now. The inline value is where a slide
+// is heading; the computed value is where the row is drawn this frame, which
+// is what getBoundingClientRect reports.
+export function currentShiftX(row) {
+  if (!row) return 0;
+  const ownerWindow = row.nodeType === 1 ? getOwnerWindow(row) : null;
+  if (ownerWindow && typeof ownerWindow.getComputedStyle === "function") {
+    const value = parseFloat(ownerWindow.getComputedStyle(row).translate);
+    return Number.isFinite(value) ? value : 0;
+  }
+  return parseFloat((row.style && row.style.translate) || "") || 0;
+}
+
+// Per-row corrections the shared CSS geometry cannot know: a first mounted
+// child sitting below unmounted siblings (lead), a last mounted child with
+// unmounted siblings still to come (more, tail), and rows taller or shorter
+// than the measured default (mid).
+export function measureTreeRows(container, defaultMid) {
+  const rows = [];
+  if (!container || typeof container.querySelectorAll !== "function") return rows;
+  for (const block of container.querySelectorAll(".tree-item-children")) {
+    const children = Array.from(block.children || []).filter(
+      (el) => el.classList && el.classList.contains("tree-item")
+    );
+    if (!children.length) continue;
+    const blockRect = block.getBoundingClientRect();
+    if (!blockRect.height) continue;
+    children.forEach((el, index) => {
+      const rect = el.getBoundingClientRect();
+      const row = { el };
+      if (index === 0) {
+        const lead = rect.top - blockRect.top;
+        if (lead > 1) row.lead = lead;
+      }
+      if (index === children.length - 1) {
+        const tail = blockRect.bottom - rect.bottom;
+        if (tail > 1) {
+          row.more = true;
+          row.tail = tail;
+        }
+      }
+      const self = el.querySelector(":scope > .tree-item-self");
+      const selfRect = self && self.getBoundingClientRect();
+      if (selfRect && selfRect.height && Math.abs(selfRect.height / 2 - defaultMid) > 0.5) {
+        row.mid = selfRect.height / 2;
+      }
+      if (row.lead !== undefined || row.more || row.mid !== undefined) rows.push(row);
+    });
+  }
+  return rows;
+}
+
+// Reads the tree guide geometry from the rendered tree so the connectors line
+// up under any theme: where a folder's trunk sits relative to its children,
+// how far each elbow runs, and the row midline. Needs one expanded folder.
+export function measureTreeGuides(container, containerRect) {
+  if (!container || typeof container.querySelector !== "function" || !containerRect) return null;
+  const child = container.querySelector(
+    ".nav-folder:not(.is-collapsed) > .tree-item-children > .tree-item"
+  );
+  const parent = child && child.parentElement && child.parentElement.parentElement;
+  const parentChevron = parent && parent.querySelector(":scope > .tree-item-self .collapse-icon svg");
+  const childSelf = child && child.querySelector(":scope > .tree-item-self");
+  if (!parentChevron || !childSelf) return null;
+
+  // Rows may be mid-shift (active label, drag wave); measure them at rest.
+  const shiftOf = currentShiftX;
+  const chevronRect = parentChevron.getBoundingClientRect();
+  const childRect = child.getBoundingClientRect();
+  const selfRect = childSelf.getBoundingClientRect();
+  if (!chevronRect.width || !selfRect.height) return null;
+  const parentShift = shiftOf(parent.querySelector(":scope > .tree-item-self"));
+  const trunk = chevronRect.left - parentShift + chevronRect.width / 2 - childRect.left;
+  const parentMid = chevronRect.top + chevronRect.height / 2;
+
+  // Elbow ends: just before a child folder's chevron, a little further for a
+  // file, which has no chevron and starts at its label.
+  const inset = (row, selector, gap) => {
+    const target = row && row.querySelector(selector);
+    const rowItem = row && row.parentElement;
+    if (!target || !rowItem) return undefined;
+    const left = target.getBoundingClientRect().left - shiftOf(row) - rowItem.getBoundingClientRect().left;
+    return left - gap - trunk;
+  };
+  const folderStub = inset(container.querySelector(".tree-item-children .nav-folder-title"), ".collapse-icon svg", 3);
+  const fileStub = inset(container.querySelector(".tree-item-children .nav-file-title"), ".tree-item-inner", 6);
+
+  const next = child.nextElementSibling;
+  const gap = next && next.classList.contains("tree-item")
+    ? Math.max(0, next.getBoundingClientRect().top - childRect.bottom)
+    : 0;
+
+  // Top-level rows sit in a plain wrapper, not in a .tree-item-children.
+  const rootSelf = container.querySelector(":scope > div > .nav-folder > .tree-item-self");
+  const rootChevron = rootSelf && rootSelf.querySelector(".collapse-icon svg");
+  const rootRect = rootChevron && rootChevron.getBoundingClientRect();
+
+  return {
+    trunk,
+    folderStub,
+    fileStub,
+    mid: selfRect.height / 2,
+    // From the top of the children block up to just under the parent's
+    // chevron. Measured on the block, not on a child: the tree renders lazily,
+    // so the first child in the DOM can sit far below its folder.
+    reach: clamp(
+      child.parentElement.getBoundingClientRect().top - (parentMid + chevronRect.height / 2 + 2),
+      0,
+      selfRect.height,
+    ),
+    gap,
+    rootTrunkX: rootRect && rootRect.width
+      ? rootRect.left - shiftOf(rootSelf) + rootRect.width / 2 - containerRect.left
+      : undefined,
+  };
 }
 
 export function readRailX(container) {

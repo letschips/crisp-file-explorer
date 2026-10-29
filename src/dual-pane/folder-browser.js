@@ -21,6 +21,9 @@ export class CrispFolderBrowser {
     this.entries = [];
     this.cleanups = [];
     this.treeRows = new Map();
+    this.treeNodes = [];
+    this.treeIndex = new Map();
+    this.treeRowHeight = 34;
     this.fileRows = new Map();
     this.expandAncestors(this.selectedPath);
     this.create();
@@ -81,6 +84,8 @@ export class CrispFolderBrowser {
     this.tree.setAttribute("aria-label", "文件夹导航");
     this.tree.tabIndex = 0;
     this.treeContent = this.element("div", "crisp-fe-folder-tree-content", this.tree);
+    this.tree.crispFolderBrowser = this;
+    this.listen(this.tree, "scroll", () => this.renderTreeWindow(), { passive: true });
 
     this.separator = this.element("div", "crisp-fe-browser-separator", this.shell);
     this.separator.tabIndex = 0;
@@ -257,7 +262,24 @@ export class CrispFolderBrowser {
   }
 
   focusTree() {
-    (this.treeRows.get(this.selectedPath) || this.tree).focus({ preventScroll: true });
+    this.focusTreePath(this.selectedPath);
+  }
+
+  revealTreePath(path) {
+    const index = this.treeIndex.get(path);
+    if (index === undefined) return;
+    const top = 4 + index * this.treeRowHeight;
+    const bottom = top + 32;
+    if (top < this.tree.scrollTop) this.tree.scrollTop = Math.max(0, top - 4);
+    else if (bottom > this.tree.scrollTop + this.tree.clientHeight) {
+      this.tree.scrollTop = bottom - this.tree.clientHeight + 4;
+    }
+    this.renderTreeWindow();
+  }
+
+  focusTreePath(path) {
+    this.revealTreePath(path);
+    (this.treeRows.get(path) || this.tree).focus({ preventScroll: true });
   }
 
   focusEditor() {
@@ -282,8 +304,10 @@ export class CrispFolderBrowser {
       if (this.destroyed || !this.enabled) return;
       this.updateLayout();
       this.renderListWindow();
+      this.renderTreeWindow();
     });
     this.layoutObserver.observe(this.shell);
+    this.layoutObserver.observe(this.tree);
     this.layoutObserver.observe(this.list);
   }
 
@@ -375,7 +399,7 @@ export class CrispFolderBrowser {
       this.renderDirectory();
     }
     this.dirty = false;
-    if (reveal) this.treeRows.get(path)?.scrollIntoView({ block: "nearest" });
+    if (reveal) this.revealTreePath(path);
     this.rail?.refresh({ reveal: false });
     return true;
   }
@@ -404,7 +428,7 @@ export class CrispFolderBrowser {
     if (next === this.expanded.has(path)) return false;
     if (next) this.expanded.add(path); else this.expanded.delete(path);
     this.renderTree();
-    this.treeRows.get(path)?.focus({ preventScroll: true });
+    this.focusTreePath(path);
     return true;
   }
 
@@ -420,9 +444,7 @@ export class CrispFolderBrowser {
     if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault(); e.stopPropagation(); this.focusList(); return;
     }
-    const rows = [...this.treeRows.values()];
-    const current = e.target.closest("[data-folder-path]") || this.treeRows.get(this.selectedPath) || rows[0];
-    const path = current?.dataset?.folderPath;
+    const path = e.target.closest("[data-folder-path]")?.dataset.folderPath ?? this.selectedPath;
     if (e.key === "F2") {
       e.preventDefault(); e.stopPropagation();
       const file = path && this.plugin.app.vault.getAbstractFileByPath(path);
@@ -437,22 +459,24 @@ export class CrispFolderBrowser {
     }
     if (e.altKey || e.ctrlKey || e.metaKey || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "].includes(e.key)) return;
     e.preventDefault(); e.stopPropagation();
+    const rows = this.treeNodes;
+    const index = this.treeIndex.get(path) ?? 0;
+    const current = rows[index];
     if (!current) return;
-    const index = rows.indexOf(current);
     let target;
     if (e.key === "ArrowUp") target = rows[Math.max(0, index - 1)];
     if (e.key === "ArrowDown") target = rows[Math.min(rows.length - 1, index + 1)];
     if (e.key === "Home") target = rows[0];
     if (e.key === "End") target = rows.at(-1);
-    if (target) { this.selectFolder(target.dataset.folderPath); this.treeRows.get(target.dataset.folderPath)?.focus(); }
+    if (target) { this.selectFolder(target.folder.path); this.focusTreePath(target.folder.path); }
     if (e.key === "ArrowRight") {
-      if (current.getAttribute("aria-expanded") === "false") this.toggleFolder(path, true);
-      else if (current.getAttribute("aria-expanded") === "true") rows[index + 1]?.focus();
+      if (current.children.length && !this.expanded.has(path)) this.toggleFolder(path, true);
+      else if (current.children.length && rows[index + 1]) this.focusTreePath(rows[index + 1].folder.path);
       else this.focusList();
     }
     if (e.key === "ArrowLeft") {
       if (this.expanded.has(path)) this.toggleFolder(path, false);
-      else { const parent = crispFolderPath(path); this.selectFolder(parent, true); this.treeRows.get(parent)?.focus(); }
+      else { const parent = crispFolderPath(path); this.selectFolder(parent, true); this.focusTreePath(parent); }
     }
     if (e.key === "Enter" || e.key === " ") this.selectFolder(path);
   }
@@ -506,31 +530,12 @@ export class CrispFolderBrowser {
 
   renderTree() {
     this.tree.dataset.crispFolderPath = this.selectedPath;
-    const focused = this.doc.activeElement?.dataset?.folderPath;
-    const scroll = this.tree.scrollTop;
-    this.treeRows.clear();
-    const fragment = this.doc.createDocumentFragment();
+    this.treeNodes = [];
+    this.treeIndex.clear();
     const append = (folder, depth) => {
-      const row = this.element("button", "nav-folder-title crisp-fe-folder-row", fragment);
-      row.type = "button";
-      row.dataset.path = folder.path;
-      row.dataset.folderPath = folder.path;
-      row.style.setProperty("--folder-depth", depth);
-      row.setAttribute("role", "treeitem");
-      row.setAttribute("aria-level", depth + 1);
-      row.setAttribute("aria-selected", String(folder.path === this.selectedPath));
-      row.tabIndex = folder.path === this.selectedPath ? 0 : -1;
-      row.title = folder.path;
       const children = crispDirectoryEntries(folder).filter(child => Array.isArray(child.children));
-      const arrow = this.element("span", "crisp-fe-folder-chevron", row);
-      if (children.length) {
-        row.setAttribute("aria-expanded", String(this.expanded.has(folder.path)));
-        setIcon(arrow, this.expanded.has(folder.path) ? "chevron-down" : "chevron-right");
-      } else arrow.classList.add("is-empty");
-      const icon = this.element("span", "crisp-fe-browser-entry-icon", row);
-      setIcon(icon, "folder");
-      this.element("span", "nav-folder-title-content crisp-fe-browser-name", row, folder.name);
-      this.treeRows.set(folder.path, row);
+      this.treeIndex.set(folder.path, this.treeNodes.length);
+      this.treeNodes.push({ folder, depth, children });
       if (this.expanded.has(folder.path)) for (const child of children) append(child, depth + 1);
     };
     for (const child of crispDirectoryEntries(this.folder("")).filter(f => Array.isArray(f.children))) append(child, 0);
@@ -543,10 +548,77 @@ export class CrispFolderBrowser {
       this.foldAllButton.disabled = folders.length === 0;
       setIcon(this.foldAllButton, allExpanded ? "chevrons-down-up" : "chevrons-up-down");
     }
-    this.treeContent.replaceChildren(fragment);
-    this.tree.scrollTop = scroll;
-    if (focused !== undefined) this.treeRows.get(focused)?.focus({ preventScroll: true });
+    // The rail is positioned inside the scroll box; its previous height must
+    // not keep a collapsed tree's scroll extent artificially large.
+    this.tree.style.setProperty("--crisp-fe-height", `${this.treeNodes.length * this.treeRowHeight + 20}px`);
+    this.tree.scrollTop = Math.min(this.tree.scrollTop,
+      Math.max(0, this.treeNodes.length * this.treeRowHeight + 20 - this.tree.clientHeight));
+    this.treeWindowKey = "";
+    this.renderTreeWindow(false);
     this.rail?.scheduleRefresh();
+  }
+
+  renderTreeWindow(refreshRail = true) {
+    if (!this.treeContent) return;
+    const { start, end } = crispListWindow(this.treeNodes.length, this.tree.scrollTop, this.tree.clientHeight, this.treeRowHeight);
+    const key = `${start}:${end}`;
+    if (key === this.treeWindowKey) return;
+    this.treeWindowKey = key;
+    const focused = this.treeContent.contains(this.doc.activeElement) ? this.doc.activeElement?.dataset.folderPath : undefined;
+    const previousRows = this.treeRows;
+    this.treeRows = new Map();
+    const fragment = this.doc.createDocumentFragment();
+    for (let index = start; index < end; index++) {
+      const { folder, depth, children } = this.treeNodes[index];
+      const row = this.element("button", "nav-folder-title crisp-fe-folder-row", fragment);
+      row.type = "button";
+      row.dataset.path = folder.path;
+      row.dataset.folderPath = folder.path;
+      row.style.setProperty("--folder-depth", depth);
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-level", depth + 1);
+      row.setAttribute("aria-selected", String(folder.path === this.selectedPath));
+      row.tabIndex = folder.path === this.selectedPath ? 0 : -1;
+      row.title = folder.path;
+      const arrow = this.element("span", "crisp-fe-folder-chevron", row);
+      if (children.length) {
+        row.setAttribute("aria-expanded", String(this.expanded.has(folder.path)));
+        setIcon(arrow, this.expanded.has(folder.path) ? "chevron-down" : "chevron-right");
+      } else arrow.classList.add("is-empty");
+      setIcon(this.element("span", "crisp-fe-browser-entry-icon", row), "folder");
+      this.element("span", "nav-folder-title-content crisp-fe-browser-name", row, folder.name);
+      this.treeRows.set(folder.path, row);
+    }
+    this.treeContent.style.paddingTop = `${start * this.treeRowHeight}px`;
+    this.treeContent.style.paddingBottom = `${(this.treeNodes.length - end) * this.treeRowHeight}px`;
+    this.treeContent.replaceChildren(fragment);
+    if (focused !== undefined) (this.treeRows.get(focused) || this.tree).focus({ preventScroll: true });
+    if (this.rail && refreshRail) {
+      for (const path of new Set([...previousRows.keys(), ...this.treeRows.keys()])) {
+        const index = this.treeIndex.get(path);
+        const item = this.rail.items[index];
+        if (item?.path === path) {
+          item.el = this.treeRows.get(path);
+          item.renderedX = undefined;
+          if (item.el) item.el.classList.add("crisp-fe-item", "crisp-fe-folder");
+          item.el?.classList.toggle("crisp-fe-active", item.active || index === this.rail.visualActiveIndex);
+        }
+      }
+      this.rail.syncTickElements({ preserveMotion: true });
+      this.rail.requestFrame();
+    }
+  }
+
+  railItems(containerRect) {
+    const rect = this.treeContent.getBoundingClientRect();
+    const top = rect.top - containerRect.top + this.tree.scrollTop;
+    const left = rect.left - containerRect.left;
+    return this.treeNodes.map(({ folder, depth }, index) => ({
+      el: this.treeRows.get(folder.path), path: folder.path, type: "folder",
+      center: top + index * this.treeRowHeight + 16,
+      contentLeft: left + 3 + depth * 12, active: folder.path === this.selectedPath,
+      renderedX: undefined,
+    }));
   }
 
   renderDirectory() {
@@ -821,6 +893,7 @@ export class CrispFolderBrowser {
     this.cleanups.length = 0;
     this.root.classList.remove("crisp-fe-browser-open");
     this.nativeContainer.inert = false;
+    delete this.tree.crispFolderBrowser;
     this.shell.remove();
     this.toggle.remove();
   }

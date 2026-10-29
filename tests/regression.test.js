@@ -15,6 +15,10 @@ function loadPluginRuntime(overrides = {}) {
     hasStableTickTopology: typeof hasStableTickTopology === "function" ? hasStableTickTopology : undefined,
     buildTickMarks: typeof buildTickMarks === "function" ? buildTickMarks : undefined,
     fitTickToContent: typeof fitTickToContent === "function" ? fitTickToContent : undefined,
+    treeGuideContentLeft: typeof treeGuideContentLeft === "function" ? treeGuideContentLeft : undefined,
+    measureTreeGuides: typeof measureTreeGuides === "function" ? measureTreeGuides : undefined,
+    measureTreeRows: typeof measureTreeRows === "function" ? measureTreeRows : undefined,
+    tickContentLeft: typeof tickContentLeft === "function" ? tickContentLeft : undefined,
     reconcileMeasuredItemMotion: typeof reconcileMeasuredItemMotion === "function" ? reconcileMeasuredItemMotion : undefined,
     normalizeActivity: typeof normalizeActivity === "function" ? normalizeActivity : undefined,
     rankSmartMagnetPaths: typeof rankSmartMagnetPaths === "function" ? rankSmartMagnetPaths : undefined,
@@ -299,6 +303,29 @@ test("orb rotation follows viewport movement, not scroll-coordinate changes", ()
   FileExplorerRail.prototype.renderOrbBall.call(controller);
 
   assert.equal(ball.style.transform, "rotate(0deg)");
+});
+
+test("a dragged orb keeps rolling while the edge auto-scroll moves the tree under it", () => {
+  const { FileExplorerRail } = loadPluginRuntime();
+  const ball = { style: { transform: "" } };
+  const controller = {
+    orb: {
+      dataset: { orbStyle: "soccer" },
+      querySelector: () => ball,
+    },
+    container: { scrollTop: 50 },
+    displayY: 100,
+    orbRotation: 0,
+    isDragging: true,
+  };
+
+  FileExplorerRail.prototype.renderOrbBall.call(controller);
+  // Held at the top edge: the tree scrolls 20px, the ball stays on screen.
+  controller.container.scrollTop = 30;
+  controller.displayY = 80;
+  FileExplorerRail.prototype.renderOrbBall.call(controller);
+
+  assert.notEqual(ball.style.transform, "rotate(0deg)");
 });
 
 test("spring motion starts on the first animation frame", () => {
@@ -2930,6 +2957,123 @@ test("resting ticks keep a gap before the row content, never shrinking below a v
   assert.ok(cramped.maxWidth >= 6, "a tick never disappears");
   const between = ticks.filter((tick) => tick.kind === "short" && tick.prevItemIndex === 0);
   assert.ok(between.every((tick) => railX + tick.maxWidth <= 27 - 3), "between-row ticks respect the nearer row");
+});
+
+test("tree guides keep nested ticks short of the root trunk and leave top-level rows alone", () => {
+  const { buildTickMarks, treeGuideContentLeft } = loadPluginRuntime();
+  assert.equal(typeof treeGuideContentLeft, "function");
+  const railX = 12;
+  const rootTrunkX = 33;
+  assert.equal(treeGuideContentLeft(27, 0, rootTrunkX), 27, "a top-level row keeps its own content edge");
+  assert.equal(treeGuideContentLeft(51, 1, undefined), 51, "without a measured trunk nothing changes");
+  assert.equal(treeGuideContentLeft(20, 2, rootTrunkX), 20, "content already left of the trunk is kept");
+  const items = [
+    { center: 16, type: "folder", contentLeft: treeGuideContentLeft(27, 0, rootTrunkX) },
+    { center: 50, type: "file", contentLeft: treeGuideContentLeft(51, 1, rootTrunkX) },
+    { center: 84, type: "folder", contentLeft: treeGuideContentLeft(93, 2, rootTrunkX) },
+  ];
+  const ticks = buildTickMarks(items, railX).filter((tick) => tick.kind === "long");
+  assert.ok(ticks.slice(1).every((tick) => railX + tick.maxWidth <= rootTrunkX - 3), "nested ticks stop before the trunk");
+});
+
+test("tree guide reach is measured from the children block, not from a lazily rendered child", () => {
+  const { measureTreeGuides } = loadPluginRuntime();
+  const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
+  const node = (box, extra = {}) => ({
+    style: {},
+    classList: { contains: (name) => (extra.classes || []).includes(name) },
+    getBoundingClientRect: () => box,
+    querySelector: (selector) => (extra.query || {})[selector] || null,
+    ...extra,
+  });
+  // A folder row at y 0–33; its children block starts at 35, but the first
+  // child the tree has rendered sits 700px further down.
+  const chevron = node(rect(27, 10, 12, 12));
+  const parentSelf = node(rect(21, 0, 240, 33));
+  const parent = node(rect(21, 0, 240, 2000), { query: { ":scope > .tree-item-self .collapse-icon svg": chevron, ":scope > .tree-item-self": parentSelf } });
+  const block = node(rect(45, 35, 216, 1960));
+  block.parentElement = parent;
+  const childSelf = node(rect(45, 735, 216, 33));
+  const child = node(rect(45, 735, 216, 33), { query: { ":scope > .tree-item-self": childSelf }, nextElementSibling: null });
+  child.parentElement = block;
+  const container = node(rect(0, 0, 280, 800), {
+    query: { ".nav-folder:not(.is-collapsed) > .tree-item-children > .tree-item": child },
+  });
+  const guides = measureTreeGuides(container, rect(0, 0, 280, 800));
+  assert.ok(guides, "geometry is measured");
+  assert.equal(guides.trunk, -12, "trunk sits under the parent chevron");
+  // Block top 35 minus (chevron centre 16 + half chevron 6 + 2px gap).
+  assert.equal(guides.reach, 11, "reach spans from the children block up to under the chevron");
+});
+
+function treeFixtureNode(box, extra = {}) {
+  return {
+    style: {},
+    classList: { contains: (name) => (extra.classes || []).includes(name) },
+    getBoundingClientRect: () => box,
+    querySelector: (selector) => (extra.query || {})[selector] || null,
+    ...extra,
+  };
+}
+
+function treeRect(left, top, width, height) {
+  return { left, top, width, height, right: left + width, bottom: top + height };
+}
+
+test("tree guides measure a sliding folder row where it is now, not where it is heading", () => {
+  const { measureTreeGuides } = loadPluginRuntime();
+  // The folder row is 25px into a 34px slide: its chevron is drawn at 27+25.
+  const computed = new Map();
+  const ownerDocument = { defaultView: { getComputedStyle: (el) => ({ translate: computed.get(el) || "none" }) } };
+  const node = (box, extra) => treeFixtureNode(box, { nodeType: 1, ownerDocument, ...extra });
+  const chevron = node(treeRect(52, 10, 12, 12));
+  const parentSelf = node(treeRect(46, 0, 240, 33));
+  parentSelf.style.translate = "34px 0px";
+  computed.set(parentSelf, "25px");
+  const parent = node(treeRect(21, 0, 240, 200), { query: { ":scope > .tree-item-self .collapse-icon svg": chevron, ":scope > .tree-item-self": parentSelf } });
+  const block = node(treeRect(45, 35, 216, 165));
+  block.parentElement = parent;
+  const child = node(treeRect(45, 35, 216, 33), { query: { ":scope > .tree-item-self": node(treeRect(45, 35, 216, 33)) }, nextElementSibling: null });
+  child.parentElement = block;
+  const container = node(treeRect(0, 0, 280, 800), { query: { ".nav-folder:not(.is-collapsed) > .tree-item-children > .tree-item": child } });
+  const guides = measureTreeGuides(container, treeRect(0, 0, 280, 800));
+  assert.equal(guides.trunk, -12, "the trunk lands under the chevron at rest");
+});
+
+test("a selected nested row's shifted label never lets its tick past the static trunk", () => {
+  const { tickContentLeft } = loadPluginRuntime();
+  const rail = {
+    isDragging: false,
+    visualActiveIndex: 0,
+    items: [{ contentLeft: 33, treeEdge: 33, active: true }],
+  };
+  assert.equal(tickContentLeft(rail, { itemIndex: 0 }), 33, "the label shift moves text, not the trunk");
+  rail.items[0] = { contentLeft: 27, active: true };
+  assert.equal(tickContentLeft(rail, { itemIndex: 0 }), 27 + 34, "without tree guides the label shift still applies");
+});
+
+test("tree rows carry lazy-render gaps and their own midline", () => {
+  const { measureTreeRows } = loadPluginRuntime();
+  const item = (top, height, selfHeight = height) => {
+    const self = treeFixtureNode(treeRect(45, top, 216, selfHeight));
+    return treeFixtureNode(treeRect(45, top, 216, height), { classes: ["tree-item"], query: { ":scope > .tree-item-self": self } });
+  };
+  // 180px of unmounted children above, 33px rows, one tall 64px row, and
+  // 120px of unmounted children reserved below by min-height.
+  const spacer = treeFixtureNode(treeRect(45, 35, 216, 0.1));
+  const first = item(215, 33);
+  const tall = item(250, 64);
+  const last = item(316, 33);
+  const block = treeFixtureNode(treeRect(45, 35, 216, 434));
+  block.children = [spacer, first, tall, last];
+  const container = { querySelectorAll: (selector) => (selector === ".tree-item-children" ? [block] : []) };
+  const rows = measureTreeRows(container, 16.5);
+  const byEl = new Map(rows.map((row) => [row.el, row]));
+  assert.equal(byEl.get(first).lead, 180, "the first mounted child reaches up across the unmounted ones");
+  assert.equal(byEl.get(tall).mid, 32, "a taller row meets its elbow at its own midline");
+  assert.equal(byEl.get(last).more, true, "the last mounted child keeps the trunk going past it");
+  assert.equal(byEl.get(last).tail, 120, "the trunk runs on across the reserved space");
+  assert.ok(!byEl.has(spacer), "the spacer itself is not a row");
 });
 
 test("auto-expanding a folder while dragging opens it in one step, without the core slide animation", () => {

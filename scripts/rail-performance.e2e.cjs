@@ -37,7 +37,7 @@ async function probe() {
     rows.push(row);
   }
   const fake = Object.create(plugin);
-  fake.settings = { ...plugin.settings, openOnDragRelease: false, soundEnabled: false,
+  fake.settings = { ...plugin.settings, orbStyle: "soccer", openOnDragRelease: false, soundEnabled: false,
     releaseSoundEnabled: false, frequentMagnetsEnabled: false, autoExpandFoldersOnDrag: false };
   fake.app = { workspace: { getActiveFile: () => ({ path: rows[10].dataset.path }) } };
   fake.getTodayPathSet = fake.getFrequentPathSet = fake.getPinnedPathSet = () => new Set();
@@ -85,11 +85,20 @@ async function probe() {
     check("pointer movement wakes rendering after a pause", rail.displayY > heldY + 50 && renders > before,
       { previousY: heldY, nextY: rail.displayY });
     const scrollBefore = container.scrollTop;
+    const rotationBefore = rail.orbRotation;
     pointer(win, "pointermove", rect.bottom - 2);
     await wait(180);
     check("holding the pointer at an edge continues scrolling and moves the orb",
       container.scrollTop > scrollBefore + 20 && rail.displayY > heldY,
       { previousScroll: scrollBefore, nextScroll: container.scrollTop });
+    check("native bottom edge scroll also rotates the soccer orb", Math.abs(rail.orbRotation - rotationBefore) > 5,
+      { rotationDelta: rail.orbRotation - rotationBefore });
+    pointer(win, "pointermove", rect.top + 2);
+    await wait(80);
+    const topScroll = container.scrollTop, topRotation = rail.orbRotation;
+    await wait(100);
+    check("native top edge scroll also rotates the soccer orb", container.scrollTop < topScroll && rail.orbRotation < topRotation,
+      { scrollDelta: container.scrollTop - topScroll, rotationDelta: rail.orbRotation - topRotation });
     pointer(win, "pointercancel", rect.top + 310);
     await wait(120);
     check("cancelling releases pointer listeners and both frame loops", !rail.isDragging && !rail.dragOwnerWindow && !rail.dragScrollFrame && !rail.frame);

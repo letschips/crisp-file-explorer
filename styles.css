@@ -1034,3 +1034,72 @@ body.crisp-file-explorer-enabled .workspace-leaf-content[data-type="file-explore
   height: 12px;
   transform: rotate(45deg);
 }
+
+/* Tree guides (opt-in). The rail stays the outermost trunk; each expanded
+   folder draws its own trunk from its chevron, with an elbow into every
+   child. Geometry comes from the rail's measurements so the lines follow the
+   theme; the fallbacks match Obsidian's default indents. Drawn on .tree-item,
+   which never moves, so shifted labels slide away from their elbow the same
+   way they slide away from their tick. */
+
+body.crisp-file-explorer-enabled .nav-files-container.crisp-fe-container.crisp-fe-tree {
+  --crisp-fe-tree-line: color-mix(in srgb, var(--text-muted) 34%, transparent);
+  --crisp-fe-tree-radius: 5px;
+}
+
+/* Per-row corrections the rail writes inline on single rows (lazy-render
+   gaps, a row of unusual height). Every row resets them here, so a value set
+   on a row reaches its own lines but none of the rows nested inside it. */
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item {
+  position: relative;
+  --crisp-fe-tree-lead: 0px;
+  --crisp-fe-tree-tail: 0px;
+  --crisp-fe-tree-row-mid: var(--crisp-fe-tree-mid, 16px);
+}
+
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item::before,
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item:is(:has(~ .tree-item), .crisp-fe-tree-more)::after {
+  content: "";
+  position: absolute;
+  left: var(--crisp-fe-tree-trunk, -12px);
+  pointer-events: none;
+  border-left: 1px solid var(--crisp-fe-tree-line);
+}
+
+/* Elbow: down to the row's midline, then across to its chevron or label. */
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item::before {
+  top: 0;
+  height: var(--crisp-fe-tree-row-mid);
+  width: var(--crisp-fe-tree-file-stub, 30px);
+  border-bottom: 1px solid var(--crisp-fe-tree-line);
+  border-bottom-left-radius: var(--crisp-fe-tree-radius);
+}
+
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .nav-folder::before {
+  width: var(--crisp-fe-tree-folder-stub, 15px);
+}
+
+/* Trunk carries on to the next sibling, across the row gap, or across the
+   space kept for siblings not rendered yet; the elbow is then only its tick,
+   so the translucent line never doubles up. */
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item:is(:has(~ .tree-item), .crisp-fe-tree-more)::after {
+  top: 0;
+  bottom: calc(-1 * var(--crisp-fe-tree-gap, 0px) - var(--crisp-fe-tree-tail));
+}
+
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item:is(:has(~ .tree-item), .crisp-fe-tree-more)::before {
+  left: calc(var(--crisp-fe-tree-trunk, -12px) + 1px);
+  border-left: none;
+  border-bottom-left-radius: 0;
+}
+
+/* First rendered child reaches up to just under its folder's chevron, across
+   any siblings above it that are not rendered yet. */
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item:not(.tree-item ~ .tree-item)::before,
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item:not(.tree-item ~ .tree-item):is(:has(~ .tree-item), .crisp-fe-tree-more)::after {
+  top: calc(-1 * (var(--crisp-fe-tree-reach, 10px) + var(--crisp-fe-tree-lead)));
+}
+
+body.crisp-file-explorer-enabled .crisp-fe-container.crisp-fe-tree .tree-item-children > .tree-item:not(.tree-item ~ .tree-item)::before {
+  height: calc(var(--crisp-fe-tree-row-mid) + var(--crisp-fe-tree-reach, 10px) + var(--crisp-fe-tree-lead));
+}

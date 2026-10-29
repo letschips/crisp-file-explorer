@@ -2,7 +2,82 @@ import { DOT_SIZE, LINE_WIDTH, BULGE_SIGMA, DYNAMIC_RENDER_RADIUS, MAX_FRAME_DT,
 import { getOwnerDocument, getOwnerWindow, isConnectedToOwnerDocument, requestOwnerFrame, cancelOwnerFrame, setOwnerTimeout, clearOwnerTimeout } from "../dom/owner-window.js";
 import { ORB_SVGS, ORB_IMAGE_DATA_URLS } from "../orb/assets.generated.js";
 import { STATIC_ORB_STYLES, resolveOrbStyle, resolveSoundStyle } from "../orb/styles.js";
-import { prefersReducedMotion, clamp, mix, morphProgress, gaussianInfluence, waveOffset, stepSpring, nearestIndex, indexRangeAround, getTickBaseWidth, mutationTouchesFileTree, buildTickMarks, fitTickToContent, labelShiftFor, tickContentLeft, findTreeContent, measureRowContentLeft, readRailX, hasStableTickTopology, reconcileMeasuredItemMotion, dispatchMouseSequence, findVisibleAncestorItem, resolveOrbTarget } from "./geometry.js";
+import { prefersReducedMotion, clamp, mix, morphProgress, gaussianInfluence, waveOffset, stepSpring, nearestIndex, indexRangeAround, getTickBaseWidth, mutationTouchesFileTree, buildTickMarks, fitTickToContent, labelShiftFor, tickContentLeft, findTreeContent, measureRowContentLeft, treeGuideContentLeft, treeRowDepth, measureTreeGuides, measureTreeRows, readRailX, hasStableTickTopology, reconcileMeasuredItemMotion, dispatchMouseSequence, findVisibleAncestorItem, resolveOrbTarget } from "./geometry.js";
+
+const TREE_ROW_PROPERTIES = ["--crisp-fe-tree-lead", "--crisp-fe-tree-tail", "--crisp-fe-tree-row-mid"];
+
+const TREE_GUIDE_PROPERTIES = [
+  "--crisp-fe-tree-trunk",
+  "--crisp-fe-tree-folder-stub",
+  "--crisp-fe-tree-file-stub",
+  "--crisp-fe-tree-mid",
+  "--crisp-fe-tree-reach",
+  "--crisp-fe-tree-gap",
+];
+
+// Tree guides are pure CSS on the native tree; this only switches them and
+// hands over the measured geometry. Values keep their last reading while no
+// folder is expanded. Off and never switched on, it touches nothing.
+function syncTreeGuides(rail, enabled, geometry) {
+  const container = rail.container;
+  const classList = container && container.classList;
+  if (!enabled) {
+    rail.treeRootTrunkX = undefined;
+    if (!classList || !classList.contains("crisp-fe-tree")) return;
+    classList.remove("crisp-fe-tree");
+    for (const name of TREE_GUIDE_PROPERTIES) container.style.removeProperty(name);
+    return;
+  }
+  if (!classList.contains("crisp-fe-tree")) classList.add("crisp-fe-tree");
+  if (!geometry) return;
+  const values = {
+    "--crisp-fe-tree-trunk": geometry.trunk,
+    "--crisp-fe-tree-folder-stub": geometry.folderStub,
+    "--crisp-fe-tree-file-stub": geometry.fileStub,
+    "--crisp-fe-tree-mid": geometry.mid,
+    "--crisp-fe-tree-reach": geometry.reach,
+    "--crisp-fe-tree-gap": geometry.gap,
+  };
+  for (const [name, value] of Object.entries(values)) {
+    if (!Number.isFinite(value)) continue;
+    const next = `${Math.round(value * 10) / 10}px`;
+    if (container.style.getPropertyValue(name) !== next) container.style.setProperty(name, next);
+  }
+}
+
+function readTreeMid(container) {
+  const value = parseFloat(container.style.getPropertyValue("--crisp-fe-tree-mid"));
+  return Number.isFinite(value) ? value : 16;
+}
+
+// Writes the per-row corrections onto the rows that need them and clears rows
+// that no longer do. styles.css resets them on every row, so a row's value
+// never leaks into its nested rows.
+function syncTreeRows(rail, rows) {
+  const previous = rail.treeRows || new Set();
+  const next = new Set();
+  const px = (value) => `${Math.round(value * 10) / 10}px`;
+  const set = (el, name, value) => {
+    if (value === undefined) {
+      if (el.style.getPropertyValue(name)) el.style.removeProperty(name);
+    } else if (el.style.getPropertyValue(name) !== px(value)) {
+      el.style.setProperty(name, px(value));
+    }
+  };
+  for (const row of rows) {
+    next.add(row.el);
+    set(row.el, "--crisp-fe-tree-lead", row.lead);
+    set(row.el, "--crisp-fe-tree-tail", row.tail);
+    set(row.el, "--crisp-fe-tree-row-mid", row.mid);
+    row.el.classList.toggle("crisp-fe-tree-more", Boolean(row.more));
+  }
+  for (const el of previous) {
+    if (next.has(el)) continue;
+    for (const name of TREE_ROW_PROPERTIES) el.style.removeProperty(name);
+    el.classList.remove("crisp-fe-tree-more");
+  }
+  rail.treeRows = next;
+}
 
 export class FileExplorerRail {
   constructor(plugin, container) {
@@ -116,7 +191,7 @@ export class FileExplorerRail {
       if (!this.enabled && this.isVisible()) {
         this.setEnabled(true);
       }
-      if (mutationTouchesFileTree(mutations)) {
+      if (!this.container.crispFolderBrowser && mutationTouchesFileTree(mutations)) {
         clearOwnerTimeout(this.container, this.mutationDebounceTimer);
         this.mutationDebounceTimer = setOwnerTimeout(this.container, () => {
           this.mutationDebounceTimer = null;
@@ -202,9 +277,12 @@ export class FileExplorerRail {
       this.resetItem(item.el);
     }
 
+    syncTreeGuides(this, false, null);
+    syncTreeRows(this, []);
     this.rail.remove();
     this.container.classList.remove("crisp-fe-container", "crisp-fe-container-active", "crisp-fe-is-dragging");
   }
+
 
   isVisible() {
     if (!isConnectedToOwnerDocument(this.container)) return false;
@@ -283,7 +361,7 @@ export class FileExplorerRail {
       for (let index = dynamicStart; index <= dynamicEnd; index += 1) {
         const item = this.items[index];
         if (!item) continue;
-        item.el.style.removeProperty("translate");
+        item.el?.style.removeProperty("translate");
         item.renderedX = undefined;
       }
       this.dynamicTickRange = [0, -1];
@@ -310,12 +388,17 @@ export class FileExplorerRail {
   }
 
   resetItem(el) {
+    if (!el) return;
     el.classList.remove("crisp-fe-item", "crisp-fe-active", "crisp-fe-folder", "crisp-fe-file", "crisp-fe-magnet", "crisp-fe-today");
     el.style.removeProperty("translate");
   }
 
   handleScroll() {
     this.lastRenderViewportY = this.displayY - this.container.scrollTop;
+    if (this.container.crispFolderBrowser) {
+      this.syncTickElements({ preserveMotion: true });
+      this.requestFrame();
+    }
     if (this.isDragging) this.scheduleDragScroll();
   }
 
@@ -396,7 +479,8 @@ export class FileExplorerRail {
     const previousTickMarks = this.tickMarks;
     const hadOrbPosition = this.hasOrbPosition;
     const previousViewportY = hadOrbPosition ? this.displayY - this.container.scrollTop : 0;
-    const titles = Array.from(
+    const browser = this.container.crispFolderBrowser;
+    const titles = browser ? [] : Array.from(
       this.container.querySelectorAll(".nav-file-title, .nav-folder-title")
     ).filter((el) => !el.closest(".crisp-fe-rail"));
 
@@ -423,9 +507,23 @@ export class FileExplorerRail {
     // Read where each row's content starts (chevron, else label) in the same
     // layout pass, minus any label shift currently applied, so bulging ticks
     // can stop short of it.
-    const contentLefts = candidates.map(({ el }) => measureRowContentLeft(el, containerRect));
+    const treeGuides = !folderBrowser && Boolean(this.plugin.settings.treeGuidesEnabled);
+    const treeGeometry = treeGuides ? measureTreeGuides(this.container, containerRect) : null;
+    if (treeGeometry) this.treeRootTrunkX = treeGeometry.rootTrunkX;
+    const treeEdges = candidates.map(({ el }) => (
+      treeGuides && treeRowDepth(el, this.container) >= 1 ? this.treeRootTrunkX : undefined
+    ));
+    const contentLefts = candidates.map(({ el }, index) => {
+      const left = measureRowContentLeft(el, containerRect);
+      return treeGuides ? treeGuideContentLeft(left, 1, treeEdges[index]) : left;
+    });
+    const treeRows = treeGuides
+      ? measureTreeRows(this.container, treeGeometry ? treeGeometry.mid : readTreeMid(this.container))
+      : [];
+    syncTreeGuides(this, treeGuides, treeGeometry);
+    syncTreeRows(this, treeRows);
     this.railX = readRailX(this.container);
-    const nextItems = [];
+    const nextItems = browser ? browser.railItems(containerRect) : [];
 
     for (let index = 0; index < candidates.length; index += 1) {
       const { el, isFolder } = candidates[index];
@@ -441,10 +539,12 @@ export class FileExplorerRail {
       const center = rect.top - containerRect.top + this.container.scrollTop + rect.height / 2;
 
       const contentLeft = contentLefts[index];
-      nextItems.push({ el, center, contentLeft, path, type, active, today, magnet, pinned, renderedX: undefined });
+      const treeEdge = treeEdges[index];
+      nextItems.push({ el, center, contentLeft, treeEdge, path, type, active, today, magnet, pinned, renderedX: undefined });
     }
 
     for (const item of nextItems) {
+      if (!item.el) continue;
       if (!item.el.classList.contains("crisp-fe-item")) {
         item.el.classList.add("crisp-fe-item", item.type === "folder" ? "crisp-fe-folder" : "crisp-fe-file");
       }
@@ -493,7 +593,7 @@ export class FileExplorerRail {
     }
     this.syncEmptyState(this.items.length);
     this.tickMarks = nextTickMarks;
-    const railHeight = `${Math.max(this.container.scrollHeight, this.container.clientHeight)}px`;
+    const railHeight = `${Math.max(browser ? browser.treeNodes.length * browser.treeRowHeight + 20 : this.container.scrollHeight, this.container.clientHeight)}px`;
     if (this.container.style.getPropertyValue("--crisp-fe-height") !== railHeight) {
       this.container.style.setProperty("--crisp-fe-height", railHeight);
     }
@@ -601,20 +701,56 @@ export class FileExplorerRail {
 
   syncTickElements(options = {}) {
     const preserveMotion = Boolean(options.preserveMotion);
-    while (this.tickEls.length < this.tickMarks.length) {
-      const ownerDocument = getOwnerDocument(this.container);
-      const tick = ownerDocument.createElement("div");
-      tick.className = "crisp-fe-tick";
-      this.ticks.appendChild(tick);
-      this.tickEls.push(tick);
+    const virtual = this.container.crispFolderBrowser?.treeNodes.length > 200;
+    let indices;
+    const fresh = new Set();
+    if (virtual) {
+      if (!this.virtualTickEls) {
+        for (const el of this.tickEls) el?.remove();
+        this.tickEls = [];
+        this.virtualTickEls = new Map();
+      }
+      const height = this.container.clientHeight;
+      const [start, end] = indexRangeAround(this.tickMarks,
+        this.container.scrollTop + height / 2, height / 2 + 80, "y");
+      for (const [index, el] of this.virtualTickEls) {
+        if (index < start || index > end) {
+          el.remove();
+          this.virtualTickEls.delete(index);
+          delete this.tickEls[index];
+          this.tickSideMap.delete(index);
+        }
+      }
+      indices = [];
+      for (let index = start; index <= end; index++) {
+        indices.push(index);
+        if (!this.virtualTickEls.has(index)) {
+          const tick = this.ownerDocument.createElement("div");
+          tick.className = "crisp-fe-tick";
+          this.ticks.appendChild(tick);
+          this.virtualTickEls.set(index, tick);
+          this.tickEls[index] = tick;
+          fresh.add(index);
+        }
+      }
+      this.tickEls.length = this.tickMarks.length;
+    } else {
+      if (this.virtualTickEls) {
+        for (const el of this.virtualTickEls.values()) el.remove();
+        this.virtualTickEls = null;
+        this.tickEls = [];
+      }
+      while (this.tickEls.length < this.tickMarks.length) {
+        const tick = this.ownerDocument.createElement("div");
+        tick.className = "crisp-fe-tick";
+        this.ticks.appendChild(tick);
+        this.tickEls.push(tick);
+      }
+      while (this.tickEls.length > this.tickMarks.length) this.tickEls.pop().remove();
+      indices = this.tickMarks.map((_, index) => index);
     }
 
-    while (this.tickEls.length > this.tickMarks.length) {
-      const tick = this.tickEls.pop();
-      tick.remove();
-    }
-
-    for (let index = 0; index < this.tickMarks.length; index += 1) {
+    for (const index of indices) {
       const mark = this.tickMarks[index];
       const el = this.tickEls[index];
       const top = `${mark.y}px`;
@@ -632,12 +768,12 @@ export class FileExplorerRail {
       el.classList.toggle("is-pinned", Boolean(mark.isPinned));
 
       const baseTransform = `translate(0px, -50%) scaleX(${getTickBaseWidth(mark) / LINE_WIDTH})`;
-      if (!preserveMotion) {
+      if (!preserveMotion || fresh.has(index)) {
         el.classList.remove("is-line", "is-nearest");
         if (el.style.opacity) el.style.opacity = "";
         this.tickSideMap.delete(index);
       }
-      if (!preserveMotion || !el.style.transform) {
+      if (!preserveMotion || fresh.has(index) || !el.style.transform) {
         if (el.style.transform !== baseTransform) el.style.transform = baseTransform;
       }
       mark.renderedTransform = el.style.transform || baseTransform;
@@ -742,6 +878,7 @@ export class FileExplorerRail {
     for (let index = nextTickStart; index <= nextTickEnd; index += 1) {
       const tick = this.tickMarks[index];
       const el = this.tickEls[index];
+      if (!el) continue;
       const distance = tick.y - this.displayY;
       const progress = tick.itemIndex === undefined ? 0 : morphProgress(distance);
       const wave = tick.itemIndex === undefined || prefersReducedMotion.matches ? 0 : gaussianInfluence(distance, BULGE_SIGMA);
@@ -818,18 +955,19 @@ export class FileExplorerRail {
       if (index >= nextItemStart && index <= nextItemEnd) continue;
       const item = this.items[index];
       if (!item || item.renderedX === undefined) continue;
-      item.el.style.removeProperty("translate");
+      item.el?.style.removeProperty("translate");
       item.renderedX = undefined;
     }
 
     for (let index = nextItemStart; index <= nextItemEnd; index += 1) {
       const item = this.items[index];
+      if (!item.el) continue;
       const x = labelShiftFor(this, index);
 
       if (item.renderedX === x) continue;
       if (x === 0) {
         if (typeof item.el.style.removeProperty === "function") {
-          item.el.style.removeProperty("translate");
+          item.el?.style.removeProperty("translate");
         } else {
           item.el.style.translate = "";
         }
@@ -845,21 +983,31 @@ export class FileExplorerRail {
   renderOrbBall() {
     const ball = this.orbBall || this.orb.querySelector(".crisp-fe-orb-ball");
     const viewportY = this.displayY - this.container.scrollTop;
+    const treeY = this.displayY;
     if (!ball) {
       this.lastRenderViewportY = viewportY;
+      this.lastRenderTreeY = treeY;
       return;
     }
 
     if (STATIC_ORB_STYLES.has(this.orb.dataset.orbStyle)) {
       this.lastRenderViewportY = viewportY;
+      this.lastRenderTreeY = treeY;
       if (ball.style.transform) ball.style.removeProperty("transform");
       return;
     }
 
     if (this.lastRenderViewportY !== undefined && !prefersReducedMotion.matches) {
-      this.orbRotation += (viewportY - this.lastRenderViewportY) * ORB_ROTATION_PER_PX;
+      // A dragged ball rolls along the tree, so it keeps turning while the
+      // edge auto-scroll moves the tree under it; otherwise it turns with its
+      // on-screen movement, as when the list is scrolled.
+      const delta = this.isDragging && this.lastRenderTreeY !== undefined
+        ? treeY - this.lastRenderTreeY
+        : viewportY - this.lastRenderViewportY;
+      this.orbRotation += delta * ORB_ROTATION_PER_PX;
     }
     this.lastRenderViewportY = viewportY;
+    this.lastRenderTreeY = treeY;
     const rotation = prefersReducedMotion.matches ? "none" : `rotate(${this.orbRotation}deg)`;
     if (ball.style.transform !== rotation) ball.style.transform = rotation;
   }
@@ -994,7 +1142,9 @@ export class FileExplorerRail {
       const skipAutoExpandedFolder = this.container.dataset?.crispFolderPath === undefined && item.type === "folder" && this.autoExpandedFolderPaths.has(item.path);
       if (!skipAutoExpandedFolder) {
         this.plugin.lockInteraction();
-        dispatchMouseSequence(item.el);
+        const browser = this.container.crispFolderBrowser;
+        if (browser) browser.selectFolder(item.path, true);
+        else dispatchMouseSequence(item.el);
         didNavigate = true;
       }
     }
@@ -1050,10 +1200,10 @@ export class FileExplorerRail {
     this.lastDragIndex = index;
     const previousActive = this.items[this.visualActiveIndex];
     if (previousActive && this.visualActiveIndex !== index) {
-      previousActive.el.classList.toggle("crisp-fe-active", false);
+      previousActive.el?.classList.toggle("crisp-fe-active", false);
     }
     const nextActive = this.items[index];
-    if (nextActive) nextActive.el.classList.toggle("crisp-fe-active", true);
+    if (nextActive) nextActive.el?.classList.toggle("crisp-fe-active", true);
     this.visualActiveIndex = index;
     this.queueFolderAutoExpand(this.items[index]);
 

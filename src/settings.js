@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = {
   dualPaneDescendants: false,
   dualPaneLayout: "auto",
   includeFolders: true,
+  treeGuidesEnabled: false,
   openOnDragRelease: true,
   soundEnabled: false,
   soundStyle: "soft",
