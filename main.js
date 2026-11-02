@@ -4943,7 +4943,9 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Crisp File Explorer" });
+    const brandHeader = containerEl.createDiv({ cls: "crisp-brand-header" });
+    brandHeader.createEl("h2", { text: "Crisp File Explorer" });
+    containerEl.createEl("p", { text: "\u6587\u4EF6\u518D\u591A\uFF0C\u4E5F\u627E\u5F97\u5230", cls: "crisp-brand-slogan" });
     const createGroup = (title, description, open = false) => {
       const details = containerEl.createEl("details", {
         cls: `crisp-fe-setting-card${open ? " is-open" : ""}`

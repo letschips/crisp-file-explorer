@@ -42,7 +42,9 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Crisp File Explorer" });
+    const brandHeader = containerEl.createDiv({ cls: "crisp-brand-header" });
+    brandHeader.createEl("h2", { text: "Crisp File Explorer" });
+    containerEl.createEl("p", { text: "文件再多，也找得到", cls: "crisp-brand-slogan" });
 
     const createGroup = (title, description, open = false) => {
       const details = containerEl.createEl("details", {
