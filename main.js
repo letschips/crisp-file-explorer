@@ -4084,10 +4084,36 @@ function base64UrlToUint8Array(base64url) {
   }
   return buffer;
 }
+var SUBTLE = (() => {
+  try {
+    const globalCrypto = globalThis.crypto;
+    const subtle = globalCrypto && globalCrypto.subtle || (typeof window !== "undefined" && window.crypto ? window.crypto.subtle : void 0);
+    return subtle ? Object.freeze({ importKey: subtle.importKey.bind(subtle), verify: subtle.verify.bind(subtle) }) : null;
+  } catch {
+    return null;
+  }
+})();
+var subtleCheck = null;
+function subtleTrusted() {
+  if (!subtleCheck) {
+    subtleCheck = (async () => {
+      if (!SUBTLE) return false;
+      try {
+        const key = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM);
+        const accepted = await SUBTLE.verify("Ed25519", key, new Uint8Array(64), new TextEncoder().encode("crisp-file-explorer/self-test"));
+        return accepted === false;
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return subtleCheck;
+}
 async function importEd25519PublicKey(pem) {
   const pemContents = pem.replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "").replace(/\s/g, "");
   const der = base64UrlToUint8Array(pemContents);
-  return await window.crypto.subtle.importKey(
+  if (!SUBTLE) throw new Error("WebCrypto \u5728\u5F53\u524D\u8FD0\u884C\u73AF\u5883\u4E0D\u53EF\u7528");
+  return await SUBTLE.importKey(
     "spki",
     der.buffer,
     { name: "Ed25519" },
@@ -4147,14 +4173,15 @@ async function verifyLicenseCodeUncached(licenseCode, targetPluginId = "crisp-fi
     if (payload.expiresAt && new Date(payload.expiresAt).getTime() < Date.now()) {
       return { valid: false, reason: `\u6388\u6743\u5DF2\u4E8E ${payload.expiresAt.split("T")[0]} \u5230\u671F` };
     }
+    if (!SUBTLE || !await subtleTrusted()) return { valid: false, reason: "WebCrypto \u5728\u5F53\u524D\u8FD0\u884C\u73AF\u5883\u4E0D\u53EF\u7528" };
     const publicKey = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM);
-    const isValid = await window.crypto.subtle.verify(
+    const isValid = await SUBTLE.verify(
       "Ed25519",
       publicKey,
       base64UrlToUint8Array(signatureBase64),
       new TextEncoder().encode(payloadBase64)
     );
-    if (!isValid) return { valid: false, reason: "\u6388\u6743\u7B7E\u540D\u65E0\u6548" };
+    if (isValid !== true) return { valid: false, reason: "\u6388\u6743\u7B7E\u540D\u65E0\u6548" };
     if (skipOnline) return { valid: true, payload };
     try {
       const app = window.app;
@@ -4211,6 +4238,15 @@ function describeLicenseStatus(result) {
   if (userName) details.push(`\u6388\u6743\u7ED9: ${userName}`);
   details.push(`\u5230\u671F\u65F6\u95F4: ${typeof expiresAt === "string" && expiresAt ? expiresAt.split("T")[0] : "\u957F\u671F\u6709\u6548"}`);
   return `\u2705 \u5DF2\u6FC0\u6D3B\uFF08${details.join("\uFF0C")}\uFF09`;
+}
+
+// src/entitlement.js
+var FE_ENTITLED = /* @__PURE__ */ new WeakMap();
+function fileExplorerEntitled(owner) {
+  return !!owner && FE_ENTITLED.get(owner) === true;
+}
+function applyFileExplorerEntitlement(owner, valid) {
+  FE_ENTITLED.set(owner, valid === true);
 }
 
 // src/order/helpers.js
@@ -4381,7 +4417,7 @@ var CrispExplorerOrder = class {
     return Boolean(enabled && typeof enabled.has === "function" && enabled.has(FLEXPLORER_PLUGIN_ID));
   }
   isActive() {
-    return !this.destroyed && !this.plugin.unloading && this.plugin.licensed === true && this.order.enabled && !this.isFlexplorerEnabled();
+    return !this.destroyed && !this.plugin.unloading && fileExplorerEntitled(this.plugin) && this.order.enabled && !this.isFlexplorerEnabled();
   }
   explorerViews() {
     const leaves = typeof this.app.workspace.getLeavesOfType === "function" ? this.app.workspace.getLeavesOfType("file-explorer") : [];
@@ -4417,7 +4453,7 @@ var CrispExplorerOrder = class {
   // Called on start, on a timer and from the settings tab. Flexplorer patches the same
   // method, so this plugin stays out of the way while it is enabled and takes over once it is not.
   sync() {
-    if (this.destroyed || this.plugin.unloading || this.plugin.licensed !== true) return;
+    if (this.destroyed || this.plugin.unloading || !fileExplorerEntitled(this.plugin)) return;
     const blocked = this.isFlexplorerEnabled();
     if (blocked !== this.blockedByFlexplorer) {
       this.blockedByFlexplorer = blocked;
@@ -4978,9 +5014,9 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
     );
     const statusSetting = new Setting(licenseGroup).setName("\u5F53\u524D\u6FC0\u6D3B\u72B6\u6001").setDesc("\u6B63\u5728\u9A8C\u8BC1\u6388\u6743\u72B6\u6001...");
     if (this.plugin.settings.licenseCode) {
-      const wasLicensed = this.plugin.licensed;
+      const wasLicensed = fileExplorerEntitled(this.plugin);
       this.plugin.refreshLicense({ online: true }).then((verifyRes) => {
-        if (wasLicensed !== this.plugin.licensed) {
+        if (wasLicensed !== fileExplorerEntitled(this.plugin)) {
           this.display();
           return;
         }
@@ -4995,9 +5031,9 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
       clearLicenseVerificationCache();
       this.plugin.settings.licenseCode = value.trim();
       await this.plugin.saveSettings();
-      const wasLicensed = this.plugin.licensed;
+      const wasLicensed = fileExplorerEntitled(this.plugin);
       await this.plugin.refreshLicense({ online: false });
-      if (wasLicensed !== this.plugin.licensed) this.display();
+      if (wasLicensed !== fileExplorerEntitled(this.plugin)) this.display();
     })).addButton((button) => button.setButtonText("\u6FC0\u6D3B / \u91CD\u65B0\u9A8C\u8BC1").setCta().onClick(async () => {
       clearLicenseVerificationCache();
       const result = await this.plugin.refreshLicense({ online: true });
@@ -5009,7 +5045,7 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
         this.display();
       }
     }));
-    if (!this.plugin.licensed) {
+    if (!fileExplorerEntitled(this.plugin)) {
       renderAboutCard(
         containerEl,
         "Crisp File Explorer",
@@ -5216,7 +5252,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     this.runtimeStarted = false;
     this.observer = null;
     this.enabledDocuments = /* @__PURE__ */ new Set();
-    this.licensed = false;
+    this.licenseApplied = false;
     this.layoutReady = false;
     this.licenseCheckSeq = 0;
     await this.loadSettings();
@@ -5254,7 +5290,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     });
   }
   requireLicense(action) {
-    if (!this.licensed) {
+    if (!fileExplorerEntitled(this)) {
       new Notice("\u{1F512} Crisp File Explorer \u672A\u6FC0\u6D3B\uFF0C\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u8F93\u5165\u6388\u6743\u7801");
       return void 0;
     }
@@ -5267,25 +5303,29 @@ var CrispFileExplorerPlugin = class extends Plugin {
     const code = this.settings.licenseCode;
     const local = code ? await verifyLicenseCode(code, LICENSE_PLUGIN_ID, true) : { valid: false, reason: "\u6388\u6743\u7801\u4E3A\u7A7A" };
     if (this.unloading || seq !== this.licenseCheckSeq) return local;
-    if (!local.valid) {
-      this.setLicensed(false);
+    if (local.valid !== true) {
+      applyFileExplorerEntitlement(this, false);
+      this.applyLicenseState();
       if (notify) new Notice(`\u{1F512} Crisp File Explorer \u672A\u6FC0\u6D3B\uFF08${local.reason}\uFF09\uFF0C\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u8F93\u5165\u6388\u6743\u7801`);
       return local;
     }
-    this.setLicensed(true);
+    applyFileExplorerEntitlement(this, true);
+    this.applyLicenseState();
     if (!online) return local;
     const remote = await verifyLicenseCode(code, LICENSE_PLUGIN_ID);
     if (this.unloading || seq !== this.licenseCheckSeq) return remote;
-    if (!remote.valid) {
-      this.setLicensed(false);
+    if (remote.valid !== true) {
+      applyFileExplorerEntitlement(this, false);
+      this.applyLicenseState();
       if (notify) new Notice(`\u{1F512} Crisp File Explorer \u6388\u6743\u672A\u901A\u8FC7\uFF08${remote.reason}\uFF09`);
     }
     return remote;
   }
-  setLicensed(next) {
-    const licensed = Boolean(next);
-    if (this.licensed === licensed) return;
-    this.licensed = licensed;
+  // Brings the views in line with the gate. It reads the gate itself, so calling it cannot unlock.
+  applyLicenseState() {
+    const licensed = fileExplorerEntitled(this);
+    if (this.licenseApplied === licensed) return;
+    this.licenseApplied = licensed;
     if (!licensed) {
       this.teardownViews();
       return;
@@ -5342,7 +5382,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     return paths;
   }
   startRuntime() {
-    if (this.runtimeStarted || this.unloading || !this.licensed) return;
+    if (this.runtimeStarted || this.unloading || !fileExplorerEntitled(this)) return;
     this.runtimeStarted = true;
     this.openMarkdownPaths = this.getOpenMarkdownPaths();
     this.enhanceFileExplorers();
@@ -5493,7 +5533,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     this.magnetRankingCacheKey = "";
   }
   addCrispRailMenuItem(menu, file) {
-    if (this.licensed === false || !menu || typeof menu.addItem !== "function" || !file || !file.path || Array.isArray(file.children)) return;
+    if (!fileExplorerEntitled(this) || !menu || typeof menu.addItem !== "function" || !file || !file.path || Array.isArray(file.children)) return;
     const pinned = normalizeActivity(this.settings && this.settings.activity).pinnedPaths.includes(file.path);
     menu.addItem((item) => {
       item.setTitle(pinned ? "\u4ECE Crisp Rail \u53D6\u6D88\u56FA\u5B9A" : "\u56FA\u5B9A\u5230 Crisp Rail").setIcon(pinned ? "pin-off" : "pin").onClick(async () => {
@@ -5537,7 +5577,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     this.scheduleRefresh();
   }
   recordFileActivity(file) {
-    if (!file || !file.path || this.licensed === false) return;
+    if (!file || !file.path || !fileExplorerEntitled(this)) return;
     this.ensureTodayActivity();
     const path = file.path;
     const activity = this.settings.activity;
@@ -5707,7 +5747,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     return false;
   }
   scheduleActiveReveal(options = {}) {
-    if (this.unloading || this.licensed === false) return;
+    if (this.unloading || !fileExplorerEntitled(this)) return;
     if (this.isInteractionLocked()) {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
@@ -5816,7 +5856,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     return fileItem.el || null;
   }
   scheduleRefresh(options = {}) {
-    if (this.unloading || this.licensed === false) return;
+    if (this.unloading || !fileExplorerEntitled(this)) return;
     this.pendingRefreshReveal = this.pendingRefreshReveal || Boolean(options.reveal);
     this.pendingRefreshImmediate = this.pendingRefreshImmediate || Boolean(options.immediate);
     this.pendingRefreshTransition = this.pendingRefreshTransition || Boolean(options.transition);
@@ -5867,7 +5907,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
   }
   enhanceFileExplorers() {
     const createdControllers = /* @__PURE__ */ new Set();
-    if (this.unloading || this.licensed === false) return createdControllers;
+    if (this.unloading || !fileExplorerEntitled(this)) return createdControllers;
     const containers = this.getFileExplorerContainers();
     if (!this.folderBrowsers) this.folderBrowsers = /* @__PURE__ */ new Map();
     for (const container of containers) {

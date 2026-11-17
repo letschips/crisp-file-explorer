@@ -1,6 +1,6 @@
 # Crisp File Explorer 维护说明
 
-当前版本：v0.5.3
+当前版本：v0.5.5
 
 作者：letschips（小红书博主）
 
@@ -13,6 +13,11 @@
 - 动画帧只更新 orb 附近的刻度与标题，普通滚动不会重新测量整棵文件树。
 - 每个文件浏览器面板拥有独立控制器，并支持 Obsidian 独立窗口中的文件浏览器。
 - 智能磁吸综合近期使用与打开频率，固定点优先，总数最多 8 个。
+
+## v0.5.5 维护范围
+
+- 授权集中到 `src/entitlement.js` 的唯一门控 `fileExplorerEntitled(plugin)`，状态不再挂在插件实例上；`applyLicenseState()` 只按门控同步视图。
+- 验签在加载时取下 WebCrypto，并用全零签名自检。
 
 ## v0.5.3 维护范围
 

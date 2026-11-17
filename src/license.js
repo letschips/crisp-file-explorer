@@ -27,13 +27,44 @@ function base64UrlToUint8Array(base64url) {
   return buffer;
 }
 
+// WebCrypto is taken once at load: replacing crypto.subtle later does not reach the license check.
+const SUBTLE = (() => {
+  try {
+    const globalCrypto = globalThis.crypto;
+    const subtle = (globalCrypto && globalCrypto.subtle) || (typeof window !== "undefined" && window.crypto ? window.crypto.subtle : undefined);
+    return subtle ? Object.freeze({ importKey: subtle.importKey.bind(subtle), verify: subtle.verify.bind(subtle) }) : null;
+  } catch {
+    return null;
+  }
+})();
+
+let subtleCheck = null;
+
+// A verifier that accepts an all-zero signature is not a real verifier; no license is trusted then.
+function subtleTrusted() {
+  if (!subtleCheck) {
+    subtleCheck = (async () => {
+      if (!SUBTLE) return false;
+      try {
+        const key = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM);
+        const accepted = await SUBTLE.verify("Ed25519", key, new Uint8Array(64), new TextEncoder().encode("crisp-file-explorer/self-test"));
+        return accepted === false;
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return subtleCheck;
+}
+
 async function importEd25519PublicKey(pem) {
   const pemContents = pem
     .replace("-----BEGIN PUBLIC KEY-----", "")
     .replace("-----END PUBLIC KEY-----", "")
     .replace(/\s/g, "");
   const der = base64UrlToUint8Array(pemContents);
-  return await window.crypto.subtle.importKey(
+  if (!SUBTLE) throw new Error("WebCrypto 在当前运行环境不可用");
+  return await SUBTLE.importKey(
     "spki",
     der.buffer,
     { name: "Ed25519" },
@@ -102,14 +133,15 @@ async function verifyLicenseCodeUncached(licenseCode, targetPluginId = "crisp-fi
     if (payload.expiresAt && new Date(payload.expiresAt).getTime() < Date.now()) {
       return { valid: false, reason: `授权已于 ${payload.expiresAt.split("T")[0]} 到期` };
     }
+    if (!SUBTLE || !(await subtleTrusted())) return { valid: false, reason: "WebCrypto 在当前运行环境不可用" };
     const publicKey = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM);
-    const isValid = await window.crypto.subtle.verify(
+    const isValid = await SUBTLE.verify(
       "Ed25519",
       publicKey,
       base64UrlToUint8Array(signatureBase64),
       new TextEncoder().encode(payloadBase64)
     );
-    if (!isValid) return { valid: false, reason: "授权签名无效" };
+    if (isValid !== true) return { valid: false, reason: "授权签名无效" };
     if (skipOnline) return { valid: true, payload };
 
     try {

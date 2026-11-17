@@ -1,4 +1,5 @@
 import { clearLicenseVerificationCache, UNLICENSED_STATUS, describeLicenseStatus } from "./license.js";
+import { fileExplorerEntitled } from "./entitlement.js";
 import { PluginSettingTab, Setting, Notice } from "./obsidian.js";
 import { normalizeOrbStyle, normalizeSoundStyle } from "./orb/styles.js";
 import { normalizeExplorerOrder } from "./order/helpers.js";
@@ -88,9 +89,9 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
       .setDesc("正在验证授权状态...");
 
     if (this.plugin.settings.licenseCode) {
-      const wasLicensed = this.plugin.licensed;
+      const wasLicensed = fileExplorerEntitled(this.plugin);
       this.plugin.refreshLicense({ online: true }).then((verifyRes) => {
-        if (wasLicensed !== this.plugin.licensed) {
+        if (wasLicensed !== fileExplorerEntitled(this.plugin)) {
           this.display();
           return;
         }
@@ -112,9 +113,9 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
           clearLicenseVerificationCache();
           this.plugin.settings.licenseCode = value.trim();
           await this.plugin.saveSettings();
-          const wasLicensed = this.plugin.licensed;
+          const wasLicensed = fileExplorerEntitled(this.plugin);
           await this.plugin.refreshLicense({ online: false });
-          if (wasLicensed !== this.plugin.licensed) this.display();
+          if (wasLicensed !== fileExplorerEntitled(this.plugin)) this.display();
         }))
       .addButton((button) => button
         .setButtonText("激活 / 重新验证")
@@ -133,7 +134,7 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
           }
         }));
 
-    if (!this.plugin.licensed) {
+    if (!fileExplorerEntitled(this.plugin)) {
       renderAboutCard(
         containerEl,
         "Crisp File Explorer",

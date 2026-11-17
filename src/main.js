@@ -4,6 +4,7 @@ import { getOwnerDocument, isConnectedToOwnerDocument } from "./dom/owner-window
 import { CrispFolderBrowser } from "./dual-pane/folder-browser.js";
 import { crispRegisterIcons } from "./dual-pane/helpers.js";
 import { verifyLicenseCode, LICENSE_PLUGIN_ID } from "./license.js";
+import { applyFileExplorerEntitlement, fileExplorerEntitled } from "./entitlement.js";
 import { Plugin, Notice, normalizePath } from "./obsidian.js";
 import { normalizeOrbStyle, resolveOrbStyle, normalizeSoundStyle, resolveSoundStyle } from "./orb/styles.js";
 import { CrispExplorerOrder } from "./order/explorer-order.js";
@@ -39,7 +40,8 @@ export default class CrispFileExplorerPlugin extends Plugin {
     this.observer = null;
     this.enabledDocuments = new Set();
     // Every feature requires activation; the runtime starts only after the license passes.
-    this.licensed = false;
+    // licenseApplied only records which state the views are in; the gate is fileExplorerEntitled.
+    this.licenseApplied = false;
     this.layoutReady = false;
     this.licenseCheckSeq = 0;
     await this.loadSettings();
@@ -83,7 +85,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
   }
 
   requireLicense(action) {
-    if (!this.licensed) {
+    if (!fileExplorerEntitled(this)) {
       new Notice("🔒 Crisp File Explorer 未激活，请在插件设置中输入授权码");
       return undefined;
     }
@@ -99,27 +101,31 @@ export default class CrispFileExplorerPlugin extends Plugin {
       ? await verifyLicenseCode(code, LICENSE_PLUGIN_ID, true)
       : { valid: false, reason: "授权码为空" };
     if (this.unloading || seq !== this.licenseCheckSeq) return local;
-    if (!local.valid) {
-      this.setLicensed(false);
+    if (local.valid !== true) {
+      applyFileExplorerEntitlement(this, false);
+      this.applyLicenseState();
       if (notify) new Notice(`🔒 Crisp File Explorer 未激活（${local.reason}），请在插件设置中输入授权码`);
       return local;
     }
-    this.setLicensed(true);
+    applyFileExplorerEntitlement(this, true);
+    this.applyLicenseState();
     if (!online) return local;
 
     const remote = await verifyLicenseCode(code, LICENSE_PLUGIN_ID);
     if (this.unloading || seq !== this.licenseCheckSeq) return remote;
-    if (!remote.valid) {
-      this.setLicensed(false);
+    if (remote.valid !== true) {
+      applyFileExplorerEntitlement(this, false);
+      this.applyLicenseState();
       if (notify) new Notice(`🔒 Crisp File Explorer 授权未通过（${remote.reason}）`);
     }
     return remote;
   }
 
-  setLicensed(next) {
-    const licensed = Boolean(next);
-    if (this.licensed === licensed) return;
-    this.licensed = licensed;
+  // Brings the views in line with the gate. It reads the gate itself, so calling it cannot unlock.
+  applyLicenseState() {
+    const licensed = fileExplorerEntitled(this);
+    if (this.licenseApplied === licensed) return;
+    this.licenseApplied = licensed;
     if (!licensed) {
       this.teardownViews();
       return;
@@ -182,7 +188,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
   }
 
   startRuntime() {
-    if (this.runtimeStarted || this.unloading || !this.licensed) return;
+    if (this.runtimeStarted || this.unloading || !fileExplorerEntitled(this)) return;
     this.runtimeStarted = true;
     this.openMarkdownPaths = this.getOpenMarkdownPaths();
     this.enhanceFileExplorers();
@@ -348,7 +354,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
   }
 
   addCrispRailMenuItem(menu, file) {
-    if (this.licensed === false || !menu || typeof menu.addItem !== "function" || !file || !file.path || Array.isArray(file.children)) return;
+    if (!fileExplorerEntitled(this) || !menu || typeof menu.addItem !== "function" || !file || !file.path || Array.isArray(file.children)) return;
     const pinned = normalizeActivity(this.settings && this.settings.activity).pinnedPaths.includes(file.path);
     menu.addItem((item) => {
       item
@@ -400,7 +406,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
   }
 
   recordFileActivity(file) {
-    if (!file || !file.path || this.licensed === false) return;
+    if (!file || !file.path || !fileExplorerEntitled(this)) return;
 
     this.ensureTodayActivity();
     const path = file.path;
@@ -602,7 +608,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
   }
 
   scheduleActiveReveal(options = {}) {
-    if (this.unloading || this.licensed === false) return;
+    if (this.unloading || !fileExplorerEntitled(this)) return;
     if (this.isInteractionLocked()) {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
@@ -738,7 +744,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
   }
 
   scheduleRefresh(options = {}) {
-    if (this.unloading || this.licensed === false) return;
+    if (this.unloading || !fileExplorerEntitled(this)) return;
     this.pendingRefreshReveal = this.pendingRefreshReveal || Boolean(options.reveal);
     this.pendingRefreshImmediate = this.pendingRefreshImmediate || Boolean(options.immediate);
     this.pendingRefreshTransition = this.pendingRefreshTransition || Boolean(options.transition);
@@ -795,7 +801,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
 
   enhanceFileExplorers() {
     const createdControllers = new Set();
-    if (this.unloading || this.licensed === false) return createdControllers;
+    if (this.unloading || !fileExplorerEntitled(this)) return createdControllers;
     const containers = this.getFileExplorerContainers();
 
     if (!this.folderBrowsers) this.folderBrowsers = new Map();

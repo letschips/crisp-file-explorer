@@ -8,7 +8,7 @@ const path = require("node:path");
 function runtime(notices = []) {
   class Notice { constructor(message) { notices.push(message); } }
   const context = { module: { exports: {} }, require: id => id === "obsidian" ? { Plugin: class {}, PluginSettingTab: class {}, Notice, addIcon: () => {}, setIcon: () => {} } : require(id), window: { matchMedia: () => ({ matches: false }) }, console };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8") + "\nmodule.exports.helpers = { normalizeExplorerOrder, crispOrderFolderItems, crispReorderNames, crispRenameInOrder, crispDeleteFromOrder, crispImportFlexplorer, crispDropZone, crispAvailableTarget, CrispExplorerOrder, DEFAULT_SETTINGS };", context);
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8") + "\nmodule.exports.helpers = { normalizeExplorerOrder, crispOrderFolderItems, crispReorderNames, crispRenameInOrder, crispDeleteFromOrder, crispImportFlexplorer, crispDropZone, crispAvailableTarget, CrispExplorerOrder, DEFAULT_SETTINGS, applyFileExplorerEntitlement };", context);
   return context.module.exports.helpers;
 }
 
@@ -43,7 +43,6 @@ function harness(initialOrder, layout, options = {}) {
   };
   const view = { getSortedFolderItems: folder => folder.children.map(file => ({ file })) };
   const plugin = {
-    licensed: true,
     unloading: false,
     settings: { explorerOrder: helpers.normalizeExplorerOrder(initialOrder) },
     saveSettings: async () => { saves.push(JSON.parse(JSON.stringify(plugin.settings.explorerOrder))); },
@@ -71,6 +70,7 @@ function harness(initialOrder, layout, options = {}) {
       },
     },
   };
+  helpers.applyFileExplorerEntitlement(plugin, true);
   const order = new helpers.CrispExplorerOrder(plugin);
   order.requestSort = () => {};
   order.scheduleSave = () => {};

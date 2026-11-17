@@ -1,6 +1,7 @@
 import { isConnectedToOwnerDocument } from "../dom/owner-window.js";
 import { Notice, setIcon, normalizePath } from "../obsidian.js";
 import { FLEXPLORER_PLUGIN_ID, ORDER_SAVE_DELAY_MS, crispOrderParent, crispOrderName, crispOrderMatches, crispOwnList, crispCopyFolders, normalizeExplorerOrder, crispOrderFolderItems, crispReorderNames, crispRenameInOrder, crispDeleteFromOrder, crispImportFlexplorer, crispDropZone, crispAvailableTarget } from "./helpers.js";
+import { fileExplorerEntitled } from "../entitlement.js";
 
 export class CrispExplorerOrder {
   constructor(plugin) {
@@ -33,7 +34,7 @@ export class CrispExplorerOrder {
   }
 
   isActive() {
-    return !this.destroyed && !this.plugin.unloading && this.plugin.licensed === true
+    return !this.destroyed && !this.plugin.unloading && fileExplorerEntitled(this.plugin)
       && this.order.enabled && !this.isFlexplorerEnabled();
   }
 
@@ -78,7 +79,7 @@ export class CrispExplorerOrder {
   // Called on start, on a timer and from the settings tab. Flexplorer patches the same
   // method, so this plugin stays out of the way while it is enabled and takes over once it is not.
   sync() {
-    if (this.destroyed || this.plugin.unloading || this.plugin.licensed !== true) return;
+    if (this.destroyed || this.plugin.unloading || !fileExplorerEntitled(this.plugin)) return;
     const blocked = this.isFlexplorerEnabled();
     if (blocked !== this.blockedByFlexplorer) {
       this.blockedByFlexplorer = blocked;

@@ -482,8 +482,9 @@ test("active reveal does not request controller scrolling before the target is r
 });
 
 test("file activity persistence is truly debounced during rapid document switching", async () => {
-  const { PluginClass, clearedTimers, scheduledTimers } = loadPluginRuntime();
+  const { PluginClass, clearedTimers, scheduledTimers, context } = loadPluginRuntime();
   const plugin = Object.create(PluginClass.prototype);
+  context.applyFileExplorerEntitlement(plugin, true);
   let saveCount = 0;
   plugin.settings = {
     todayTrailEnabled: true,
@@ -1556,8 +1557,9 @@ test("activity normalization deduplicates and caps manual rail pins", () => {
 });
 
 test("file context menus expose the correct Crisp Rail pin action", () => {
-  const { PluginClass } = loadPluginRuntime();
+  const { PluginClass, context } = loadPluginRuntime();
   const plugin = Object.create(PluginClass.prototype);
+  context.applyFileExplorerEntitlement(plugin, true);
   plugin.settings = {
     frequentMagnetsEnabled: false,
     activity: { pinnedPaths: ["pinned.md"] },
@@ -1911,10 +1913,11 @@ test("explorer discovery does not remeasure controllers that refresh will check"
 test("controllers from closed secondary windows are removed even if their old document is retained", () => {
   const container = {};
   let destroyed = 0;
-  const { PluginClass } = loadPluginRuntime({
+  const { PluginClass, context } = loadPluginRuntime({
     context: { document: { body: { contains: () => true } } },
   });
   const plugin = Object.create(PluginClass.prototype);
+  context.applyFileExplorerEntitlement(plugin, true);
   plugin.unloading = false;
   plugin.controllers = new Map([[
     container,
@@ -2760,7 +2763,7 @@ function makeLicensePlugin(PluginClass, context, verdicts) {
   };
   const plugin = Object.create(PluginClass.prototype);
   Object.assign(plugin, {
-    licensed: false,
+    licenseApplied: false,
     layoutReady: true,
     licenseCheckSeq: 0,
     unloading: false,
@@ -2785,7 +2788,7 @@ test("the whole plugin stays off until the license verifies", async () => {
   const result = await plugin.refreshLicense({ online: true });
 
   assert.equal(result.valid, false);
-  assert.equal(plugin.licensed, false);
+  assert.equal(context.fileExplorerEntitled(plugin), false);
   assert.equal(plugin.started, 0);
   let frames = 0;
   context.requestAnimationFrame = () => { frames += 1; return 1; };
@@ -2811,9 +2814,29 @@ test("a valid license starts the runtime and an explicit server denial stops it"
   assert.deepEqual(calls, ["local", "online"]);
   assert.equal(plugin.started, 1);
   assert.equal(result.valid, false);
-  assert.equal(plugin.licensed, false);
+  assert.equal(context.fileExplorerEntitled(plugin), false);
   assert.equal(destroyed, 1);
   assert.equal(plugin.controllers.size, 0);
+});
+
+// Hardening: the gate lives in a module-private map, so the old one-line console unlocks
+// (calling the setter, writing licensed) must leave every feature off.
+test("console writes and setter calls do not unlock the plugin", async () => {
+  const { PluginClass, context } = loadPluginRuntime();
+  const { plugin } = makeLicensePlugin(PluginClass, context, { local: { valid: false, reason: "授权签名无效" } });
+  await plugin.refreshLicense({ online: true });
+
+  if (typeof plugin.setLicensed === "function") plugin.setLicensed(true);
+  plugin.licensed = true;
+  if (typeof plugin.applyLicenseState === "function") plugin.applyLicenseState();
+
+  assert.equal(plugin.started, 0);
+  let ran = 0;
+  plugin.requireLicense(() => { ran += 1; });
+  assert.equal(ran, 0);
+  let menuItems = 0;
+  plugin.addCrispRailMenuItem({ addItem() { menuItems += 1; } }, { path: "a.md" });
+  assert.equal(menuItems, 0);
 });
 
 test("an empty license code never starts the runtime", async () => {
