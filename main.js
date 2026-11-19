@@ -5145,6 +5145,12 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new Setting(interactionBody).setName("\u8DDF\u968F\u5F53\u524D\u6587\u4EF6").setDesc("\u5207\u6362\u5230\u53E6\u4E00\u4E2A\u6587\u4EF6\u65F6\uFF0C\u6587\u4EF6\u6811\u5982\u4F55\u663E\u793A\u5B83\u7684\u4F4D\u7F6E\u3002\u53EA\u7528\u4E8E\u539F\u751F\u6587\u4EF6\u6811\u3002").addDropdown(
+      (dropdown) => dropdown.addOption("off", "\u4E0D\u81EA\u52A8\u5C55\u5F00").addOption("reveal", "\u5C55\u5F00\u6240\u5728\u6587\u4EF6\u5939").addOption("focus", "\u5C55\u5F00\u6240\u5728\u6587\u4EF6\u5939\uFF0C\u6536\u8D77\u5176\u4ED6").setValue(this.plugin.settings.followActiveFile).onChange(async (value) => {
+        this.plugin.settings.followActiveFile = value;
+        await this.plugin.saveSettings();
+      })
+    );
     const orderBody = createGroup(
       "\u6587\u4EF6\u6392\u5E8F",
       "\u62D6\u5230\u4E24\u884C\u4E4B\u95F4\u8C03\u6574\u987A\u5E8F\uFF0C\u53F3\u952E\u53EF\u4EE5\u7F6E\u9876\u3002",
@@ -5210,6 +5216,7 @@ var DEFAULT_SETTINGS = {
   todayTrailEnabled: true,
   frequentMagnetsEnabled: true,
   autoExpandFoldersOnDrag: true,
+  followActiveFile: "reveal",
   activity: {
     todayKey: "",
     todayPaths: [],
@@ -5225,6 +5232,10 @@ var DEFAULT_SETTINGS = {
   },
   licenseCode: ""
 };
+var FOLLOW_ACTIVE_FILE_MODES = ["off", "reveal", "focus"];
+function normalizeFollowActiveFile(value) {
+  return FOLLOW_ACTIVE_FILE_MODES.includes(value) ? value : "reveal";
+}
 
 // src/main.js
 var CrispFileExplorerPlugin = class extends Plugin {
@@ -5385,6 +5396,8 @@ var CrispFileExplorerPlugin = class extends Plugin {
     if (this.runtimeStarted || this.unloading || !fileExplorerEntitled(this)) return;
     this.runtimeStarted = true;
     this.openMarkdownPaths = this.getOpenMarkdownPaths();
+    const startupFile = typeof this.app.workspace.getActiveFile === "function" ? this.app.workspace.getActiveFile() : null;
+    this.lastFollowedPath = startupFile ? startupFile.path : null;
     this.enhanceFileExplorers();
     this.scheduleRefresh({ immediate: true, reveal: true });
     for (const delay of [60, 180, 450, 900]) {
@@ -5469,6 +5482,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     this.settings.orbStyle = normalizeOrbStyle(this.settings.orbStyle);
     this.settings.soundStyle = normalizeSoundStyle(this.settings.soundStyle);
+    this.settings.followActiveFile = normalizeFollowActiveFile(this.settings.followActiveFile);
     this.settings.activity = normalizeActivity(this.settings.activity);
     this.settings.explorerOrder = normalizeExplorerOrder(this.settings.explorerOrder);
     this.ensureTodayActivity();
@@ -5763,6 +5777,23 @@ var CrispFileExplorerPlugin = class extends Plugin {
       return;
     }
     const activeFile = this.app && this.app.workspace && typeof this.app.workspace.getActiveFile === "function" ? this.app.workspace.getActiveFile() : null;
+    if (!this.settings.dualPaneEnabled) {
+      const activePath = activeFile && activeFile.path ? activeFile.path : null;
+      if (activePath === this.lastFollowedPath) {
+        this.scheduleRefresh(options);
+        return;
+      }
+      this.lastFollowedPath = activePath;
+      const mode = normalizeFollowActiveFile(this.settings.followActiveFile);
+      if (mode === "off" || !activePath) {
+        this.activeRevealRunId += 1;
+        this.cancelActiveRevealFrame();
+        this.clearActiveRevealTimers();
+        this.scheduleRefresh(options);
+        return;
+      }
+      if (mode === "focus") this.collapseFoldersOutside(activePath);
+    }
     if (activeFile && this.isActiveFileVisibleInExplorers(activeFile)) {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
@@ -5821,6 +5852,18 @@ var CrispFileExplorerPlugin = class extends Plugin {
         view.containerEl.focus();
       }
     });
+  }
+  collapseFoldersOutside(filePath) {
+    const leaves = this.app.workspace.getLeavesOfType ? this.app.workspace.getLeavesOfType("file-explorer") : [];
+    for (const leaf of leaves) {
+      const view = leaf && leaf.view;
+      if (!view || !view.fileItems) continue;
+      for (const [folderPath, item] of Object.entries(view.fileItems)) {
+        if (!folderPath || folderPath === "/" || filePath.startsWith(`${folderPath}/`)) continue;
+        if (!item || item.collapsed !== false || typeof item.setCollapsed !== "function") continue;
+        item.setCollapsed(true, false);
+      }
+    }
   }
   revealFileExplorerItem(file) {
     const leaves = this.app.workspace.getLeavesOfType ? this.app.workspace.getLeavesOfType("file-explorer") : [];

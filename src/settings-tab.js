@@ -344,6 +344,21 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(interactionBody)
+      .setName("跟随当前文件")
+      .setDesc("切换到另一个文件时，文件树如何显示它的位置。只用于原生文件树。")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("off", "不自动展开")
+          .addOption("reveal", "展开所在文件夹")
+          .addOption("focus", "展开所在文件夹，收起其他")
+          .setValue(this.plugin.settings.followActiveFile)
+          .onChange(async (value) => {
+            this.plugin.settings.followActiveFile = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     const orderBody = createGroup(
       "文件排序",
       "拖到两行之间调整顺序，右键可以置顶。",

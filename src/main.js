@@ -12,7 +12,7 @@ import { ORDER_SYNC_INTERVAL_MS, normalizeExplorerOrder } from "./order/helpers.
 import { CrispAudio } from "./rail/audio.js";
 import { FileExplorerRail } from "./rail/rail.js";
 import { CrispFileExplorerSettingTab } from "./settings-tab.js";
-import { DEFAULT_SETTINGS } from "./settings.js";
+import { DEFAULT_SETTINGS, normalizeFollowActiveFile } from "./settings.js";
 
 export default class CrispFileExplorerPlugin extends Plugin {
   async onload() {
@@ -191,6 +191,9 @@ export default class CrispFileExplorerPlugin extends Plugin {
     if (this.runtimeStarted || this.unloading || !fileExplorerEntitled(this)) return;
     this.runtimeStarted = true;
     this.openMarkdownPaths = this.getOpenMarkdownPaths();
+    // The file already open at startup keeps the folder state Obsidian restored.
+    const startupFile = typeof this.app.workspace.getActiveFile === "function" ? this.app.workspace.getActiveFile() : null;
+    this.lastFollowedPath = startupFile ? startupFile.path : null;
     this.enhanceFileExplorers();
     this.scheduleRefresh({ immediate: true, reveal: true });
 
@@ -284,6 +287,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     this.settings.orbStyle = normalizeOrbStyle(this.settings.orbStyle);
     this.settings.soundStyle = normalizeSoundStyle(this.settings.soundStyle);
+    this.settings.followActiveFile = normalizeFollowActiveFile(this.settings.followActiveFile);
     this.settings.activity = normalizeActivity(this.settings.activity);
     this.settings.explorerOrder = normalizeExplorerOrder(this.settings.explorerOrder);
     this.ensureTodayActivity();
@@ -628,6 +632,25 @@ export default class CrispFileExplorerPlugin extends Plugin {
     const activeFile = this.app && this.app.workspace && typeof this.app.workspace.getActiveFile === "function"
       ? this.app.workspace.getActiveFile()
       : null;
+    if (!this.settings.dualPaneEnabled) {
+      const activePath = activeFile && activeFile.path ? activeFile.path : null;
+      // Only switching to another file moves the tree. Returning focus to the same file keeps
+      // the folders the user folded, and the second event of one navigation keeps its pending reveal.
+      if (activePath === this.lastFollowedPath) {
+        this.scheduleRefresh(options);
+        return;
+      }
+      this.lastFollowedPath = activePath;
+      const mode = normalizeFollowActiveFile(this.settings.followActiveFile);
+      if (mode === "off" || !activePath) {
+        this.activeRevealRunId += 1;
+        this.cancelActiveRevealFrame();
+        this.clearActiveRevealTimers();
+        this.scheduleRefresh(options);
+        return;
+      }
+      if (mode === "focus") this.collapseFoldersOutside(activePath);
+    }
     if (activeFile && this.isActiveFileVisibleInExplorers(activeFile)) {
       this.activeRevealRunId += 1;
       this.cancelActiveRevealFrame();
@@ -696,6 +719,20 @@ export default class CrispFileExplorerPlugin extends Plugin {
         view.containerEl.focus();
       }
     });
+  }
+
+  collapseFoldersOutside(filePath) {
+    const leaves = this.app.workspace.getLeavesOfType ? this.app.workspace.getLeavesOfType("file-explorer") : [];
+    for (const leaf of leaves) {
+      const view = leaf && leaf.view;
+      if (!view || !view.fileItems) continue;
+      for (const [folderPath, item] of Object.entries(view.fileItems)) {
+        if (!folderPath || folderPath === "/" || filePath.startsWith(`${folderPath}/`)) continue;
+        if (!item || item.collapsed !== false || typeof item.setCollapsed !== "function") continue;
+        // Unanimated, like the drag auto-expand: animated rows overlap while the rail measures them.
+        item.setCollapsed(true, false);
+      }
+    }
   }
 
   revealFileExplorerItem(file) {

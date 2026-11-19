@@ -1452,6 +1452,138 @@ test("active file discovery leaves already-expanded parents alone", () => {
   assert.equal(expanded, 0);
 });
 
+function makeFollowPlugin(mode, folders, activePath) {
+  const { PluginClass, context, scheduledFrames, scheduledTimers } = loadPluginRuntime();
+  const plugin = Object.create(PluginClass.prototype);
+  context.applyFileExplorerEntitlement(plugin, true);
+  const calls = [];
+  const fileItems = {};
+  for (const [folderPath, collapsed] of Object.entries(folders)) {
+    const item = {
+      collapsed,
+      setCollapsed(next, animate) {
+        calls.push([folderPath, next, animate]);
+        item.collapsed = next;
+      },
+    };
+    fileItems[folderPath] = item;
+  }
+  const state = { active: { path: activePath, extension: "md" } };
+  Object.assign(plugin, {
+    unloading: false,
+    pendingRefreshReveal: false,
+    activeRevealRunId: 0,
+    activeRevealTimers: [],
+    folderBrowsers: new Map(),
+    settings: { followActiveFile: mode, dualPaneEnabled: false },
+    app: {
+      workspace: {
+        getActiveFile: () => state.active,
+        getLeavesOfType: () => [{ view: { fileItems } }],
+      },
+    },
+  });
+  plugin.isInteractionLocked = () => false;
+  plugin.isMarkdownActiveLeaf = () => true;
+  plugin.scheduleRefresh = () => {};
+  plugin.restoreMarkdownFocus = () => {};
+  // A row counts as visible only when every parent folder is expanded.
+  plugin.isActiveFileVisibleInExplorers = (file) => file.path.split("/").slice(0, -1)
+    .every((_, index, parts) => fileItems[parts.slice(0, index + 1).join("/")]?.collapsed === false);
+  plugin.revealFileExplorerItem = PluginClass.prototype.revealFileExplorerItem;
+  const flush = () => {
+    for (const [id, callback] of [...scheduledFrames]) { scheduledFrames.delete(id); callback(); }
+    for (const [id, callback] of [...scheduledTimers]) { scheduledTimers.delete(id); callback(); }
+  };
+  return { plugin, calls, fileItems, state, flush };
+}
+
+test("returning focus to the same file does not re-expand a folder the user collapsed", () => {
+  const { plugin, calls, fileItems, flush } = makeFollowPlugin("reveal", { a: false }, "a/note.md");
+  plugin.lastFollowedPath = "a/note.md";
+  fileItems.a.collapsed = true; // the user folds it, then clicks back into the editor
+
+  plugin.scheduleActiveReveal({ transition: false });
+  flush();
+
+  assert.deepEqual(calls, []);
+});
+
+test("opening a different file still expands its parent folders", () => {
+  const { plugin, calls, flush } = makeFollowPlugin("reveal", { a: true, b: false }, "a/note.md");
+  plugin.lastFollowedPath = "b/other.md";
+
+  plugin.scheduleActiveReveal({ transition: true });
+  flush();
+
+  assert.deepEqual(calls.filter(([, next]) => next === false).map(([p]) => p), ["a"]);
+  assert.ok(!calls.some(([p]) => p === "b"), "other folders stay as they were in the default mode");
+});
+
+test("a second event for the same navigation does not cancel the pending reveal", () => {
+  const { plugin, calls, flush } = makeFollowPlugin("reveal", { a: true }, "a/note.md");
+  plugin.lastFollowedPath = "b/other.md";
+
+  plugin.scheduleActiveReveal({ transition: true }); // active-leaf-change
+  plugin.scheduleActiveReveal({ transition: false }); // file-open for the same file
+  flush();
+
+  assert.deepEqual(calls.map(([p, next]) => [p, next]), [["a", false]]);
+});
+
+test("follow mode off never expands folders for the active file", () => {
+  const { plugin, calls, flush } = makeFollowPlugin("off", { a: true }, "a/note.md");
+  plugin.lastFollowedPath = "b/other.md";
+
+  plugin.scheduleActiveReveal({ transition: true });
+  flush();
+
+  assert.deepEqual(calls, []);
+});
+
+test("focus mode collapses every expanded folder outside the active file's path", () => {
+  const { plugin, fileItems, flush } = makeFollowPlugin("focus", {
+    "00": false,
+    "00/templates": false,
+    "10": false,
+    "10/202610": false,
+    "10/202611": true,
+    "100": false,
+  }, "10/202611/2026-11-01.md");
+  plugin.lastFollowedPath = "00/templates/temp.md";
+
+  plugin.scheduleActiveReveal({ transition: true });
+  flush();
+
+  const state = Object.fromEntries(Object.entries(fileItems).map(([p, item]) => [p, item.collapsed]));
+  assert.deepEqual(state, {
+    "00": true,
+    "00/templates": true,
+    "10": false,
+    "10/202610": true,
+    "10/202611": false,
+    "100": true, // a name prefix is not an ancestor
+  });
+});
+
+test("focus mode leaves folders alone when only the focus returns to the same file", () => {
+  const { plugin, calls, flush } = makeFollowPlugin("focus", { a: false, b: false }, "a/note.md");
+  plugin.lastFollowedPath = "a/note.md";
+
+  plugin.scheduleActiveReveal({ transition: false });
+  flush();
+
+  assert.deepEqual(calls, []);
+});
+
+test("unknown follow modes fall back to revealing the active file", () => {
+  const { context } = loadPluginRuntime();
+  assert.equal(context.normalizeFollowActiveFile("focus"), "focus");
+  assert.equal(context.normalizeFollowActiveFile("off"), "off");
+  assert.equal(context.normalizeFollowActiveFile(undefined), "reveal");
+  assert.equal(context.normalizeFollowActiveFile("bogus"), "reveal");
+});
+
 test("activity marker sets are cached until activity changes", () => {
   const { PluginClass } = loadPluginRuntime();
   const plugin = Object.create(PluginClass.prototype);
