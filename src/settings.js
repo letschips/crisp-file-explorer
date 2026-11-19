@@ -4,7 +4,6 @@ export const DEFAULT_SETTINGS = {
   dualPaneFolderHeight: 200,
   dualPaneRatio: 0.43,
   dualPaneSort: "name",
-  dualPaneFollowActive: true,
   dualPaneDescendants: false,
   dualPaneLayout: "auto",
   includeFolders: true,
@@ -35,10 +34,19 @@ export const DEFAULT_SETTINGS = {
   licenseCode: "",
 };
 
-// How the native file tree follows the active file:
+// How the file tree follows the active file:
 // "off" leaves folders alone, "reveal" expands its parents, "focus" also collapses every other folder.
+// The dual pane only tells "off" from following.
 export const FOLLOW_ACTIVE_FILE_MODES = ["off", "reveal", "focus"];
 
 export function normalizeFollowActiveFile(value) {
   return FOLLOW_ACTIVE_FILE_MODES.includes(value) ? value : "reveal";
+}
+
+// Up to 0.5.6 the dual pane had its own `dualPaneFollowActive` toggle. In dual-pane mode it was
+// the only follow switch in effect, so a user who turned it off there keeps following off.
+export function resolveFollowActiveFile(data) {
+  const saved = data ? data.followActiveFile : undefined;
+  if (data && data.dualPaneEnabled === true && data.dualPaneFollowActive === false && saved !== "focus") return "off";
+  return normalizeFollowActiveFile(saved);
 }

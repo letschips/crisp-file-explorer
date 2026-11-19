@@ -1584,6 +1584,32 @@ test("unknown follow modes fall back to revealing the active file", () => {
   assert.equal(context.normalizeFollowActiveFile("bogus"), "reveal");
 });
 
+test("the old dual-pane follow toggle migrates once into the shared follow setting", () => {
+  const { context } = loadPluginRuntime();
+  const resolve = context.resolveFollowActiveFile;
+  // In dual-pane mode the old toggle was the only follow switch in effect.
+  assert.equal(resolve({ dualPaneEnabled: true, dualPaneFollowActive: false }), "off");
+  assert.equal(resolve({ dualPaneEnabled: true, dualPaneFollowActive: false, followActiveFile: "reveal" }), "off");
+  assert.equal(resolve({ dualPaneEnabled: true, dualPaneFollowActive: false, followActiveFile: "focus" }), "focus");
+  // Native-tree users kept following, whatever the hidden dual-pane toggle said.
+  assert.equal(resolve({ dualPaneEnabled: false, dualPaneFollowActive: false }), "reveal");
+  assert.equal(resolve({ dualPaneEnabled: true, dualPaneFollowActive: true, followActiveFile: "off" }), "off");
+  assert.equal(resolve(undefined), "reveal");
+  assert.equal("dualPaneFollowActive" in context.DEFAULT_SETTINGS, false);
+});
+
+test("loading settings drops the old dual-pane follow key", async () => {
+  const { PluginClass } = loadPluginRuntime();
+  const plugin = Object.create(PluginClass.prototype);
+  plugin.loadData = async () => ({ dualPaneEnabled: true, dualPaneFollowActive: false });
+  plugin.ensureTodayActivity = () => {};
+
+  await plugin.loadSettings();
+
+  assert.equal(plugin.settings.followActiveFile, "off");
+  assert.equal("dualPaneFollowActive" in plugin.settings, false);
+});
+
 test("activity marker sets are cached until activity changes", () => {
   const { PluginClass } = loadPluginRuntime();
   const plugin = Object.create(PluginClass.prototype);

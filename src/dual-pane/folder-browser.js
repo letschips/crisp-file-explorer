@@ -2,6 +2,7 @@ import { getOwnerDocument, getOwnerWindow } from "../dom/owner-window.js";
 import { crispFolderPath, crispRewritePath, crispDirectoryEntries, DUAL_PANE_ICON_ID, SINGLE_PANE_ICON_ID, crispRegisterIcons, crispPaneRatio, crispPaneFolderWidth, crispPaneFolderHeight, crispCollectEntries, crispNewEntryPath, crispListWindow, crispPaneLayout, crispMoveDestination, crispNameDialog } from "./helpers.js";
 import { Notice, Menu, Scope, setIcon } from "../obsidian.js";
 import { FileExplorerRail } from "../rail/rail.js";
+import { normalizeFollowActiveFile } from "../settings.js";
 
 export class CrispFolderBrowser {
   constructor(plugin, nativeContainer) {
@@ -235,7 +236,7 @@ export class CrispFolderBrowser {
   }
 
   revealActive(force = false) {
-    if (!force && !this.plugin.settings.dualPaneFollowActive) return false;
+    if (!force && normalizeFollowActiveFile(this.plugin.settings.followActiveFile) === "off") return false;
     const file = this.plugin.app.workspace.getActiveFile();
     if (!file) return false;
     const present = this.entries?.some(entry => entry.path === file.path);
@@ -243,6 +244,14 @@ export class CrispFolderBrowser {
     this.syncActiveFile();
     this.focusEntry(file.path, false);
     return true;
+  }
+
+  // Shortcut for the shared「跟随当前文件」setting; turning it back on uses the default mode.
+  toggleFollowActive() {
+    const following = normalizeFollowActiveFile(this.plugin.settings.followActiveFile) !== "off";
+    this.plugin.settings.followActiveFile = following ? "off" : "reveal";
+    this.plugin.saveSettings();
+    if (!following) this.revealActive(true);
   }
 
   focusEntry(path, focus = true) {
@@ -732,11 +741,7 @@ export class CrispFolderBrowser {
     }
     menu.addSeparator();
     menu.addItem(item => item.setTitle("包含子文件夹笔记").setIcon("layers").setChecked(this.descendants).onClick(() => this.setDescendants(!this.descendants)));
-    menu.addItem(item => item.setTitle("自动跟随当前文件").setIcon("crosshair").setChecked(Boolean(this.plugin.settings.dualPaneFollowActive)).onClick(() => {
-      this.plugin.settings.dualPaneFollowActive = !this.plugin.settings.dualPaneFollowActive;
-      this.plugin.saveSettings();
-      if (this.plugin.settings.dualPaneFollowActive) this.revealActive(true);
-    }));
+    menu.addItem(item => item.setTitle("自动跟随当前文件").setIcon("crosshair").setChecked(normalizeFollowActiveFile(this.plugin.settings.followActiveFile) !== "off").onClick(() => this.toggleFollowActive()));
     menu.addSeparator();
     for (const [mode, title] of [["auto", "自动布局"], ["horizontal", "左右分栏"], ["vertical", "上下分栏"]]) {
       menu.addItem(item => item.setTitle(title).setChecked((this.plugin.settings.dualPaneLayout || "auto") === mode).onClick(() => {

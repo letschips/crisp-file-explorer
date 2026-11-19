@@ -12,7 +12,7 @@ import { ORDER_SYNC_INTERVAL_MS, normalizeExplorerOrder } from "./order/helpers.
 import { CrispAudio } from "./rail/audio.js";
 import { FileExplorerRail } from "./rail/rail.js";
 import { CrispFileExplorerSettingTab } from "./settings-tab.js";
-import { DEFAULT_SETTINGS, normalizeFollowActiveFile } from "./settings.js";
+import { DEFAULT_SETTINGS, normalizeFollowActiveFile, resolveFollowActiveFile } from "./settings.js";
 
 export default class CrispFileExplorerPlugin extends Plugin {
   async onload() {
@@ -287,7 +287,8 @@ export default class CrispFileExplorerPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     this.settings.orbStyle = normalizeOrbStyle(this.settings.orbStyle);
     this.settings.soundStyle = normalizeSoundStyle(this.settings.soundStyle);
-    this.settings.followActiveFile = normalizeFollowActiveFile(this.settings.followActiveFile);
+    this.settings.followActiveFile = resolveFollowActiveFile(data);
+    delete this.settings.dualPaneFollowActive;
     this.settings.activity = normalizeActivity(this.settings.activity);
     this.settings.explorerOrder = normalizeExplorerOrder(this.settings.explorerOrder);
     this.ensureTodayActivity();

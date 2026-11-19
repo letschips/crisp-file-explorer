@@ -346,7 +346,7 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
 
     new Setting(interactionBody)
       .setName("跟随当前文件")
-      .setDesc("切换到另一个文件时，文件树如何显示它的位置。只用于原生文件树。")
+      .setDesc("切换到另一个文件时，文件树如何显示它的位置。双栏浏览只区分跟随与不跟随，右键菜单里也能开关。")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("off", "不自动展开")

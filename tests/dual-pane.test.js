@@ -53,6 +53,37 @@ test('opening an attachment uses the native editor and respects modifier new tab
   browser.openEntry(file.path); browser.openEntry(file.path,{metaKey:true});
   assert.equal(calls[0][0],false); assert.equal(calls[1][0],'tab'); assert.equal(calls[0][1],file);
 });
+test('dual pane follows the active file by the shared follow setting', () => {
+  const { CrispFolderBrowser } = runtime();
+  const run = (mode, force = false) => {
+    const selected = [];
+    const browser = Object.create(CrispFolderBrowser.prototype);
+    Object.assign(browser, {
+      entries: [],
+      plugin: { settings: { followActiveFile: mode }, app: { workspace: { getActiveFile: () => ({ path: 'Journal/2026-11-01.md' }) } } },
+      selectFolder(path) { selected.push(path); return true; },
+      syncActiveFile() {},
+      focusEntry() {},
+    });
+    return { result: browser.revealActive(force), selected };
+  };
+  assert.deepEqual(run('off'), { result: false, selected: [] });
+  assert.deepEqual(run('reveal'), { result: true, selected: ['Journal'] });
+  assert.deepEqual(run('focus'), { result: true, selected: ['Journal'] });
+  assert.deepEqual(run('off', true), { result: true, selected: ['Journal'] }, 'the locate button still works when following is off');
+});
+test('the dual-pane menu toggle switches the shared follow setting', () => {
+  const { CrispFolderBrowser } = runtime();
+  const browser = Object.create(CrispFolderBrowser.prototype);
+  let saves = 0; let reveals = 0;
+  browser.plugin = { settings: { followActiveFile: 'focus' }, saveSettings() { saves++; } };
+  browser.revealActive = () => { reveals++; return true; };
+  browser.toggleFollowActive();
+  assert.equal(browser.plugin.settings.followActiveFile, 'off');
+  browser.toggleFollowActive();
+  assert.equal(browser.plugin.settings.followActiveFile, 'reveal');
+  assert.equal(saves, 2); assert.equal(reveals, 1);
+});
 test('selecting a nonexistent folder never clears current navigation', () => {
   const { CrispFolderBrowser } = runtime();
   const browser=Object.create(CrispFolderBrowser.prototype);

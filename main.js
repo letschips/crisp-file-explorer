@@ -3171,6 +3171,52 @@ var FileExplorerRail = class {
   }
 };
 
+// src/settings.js
+var DEFAULT_SETTINGS = {
+  dualPaneEnabled: false,
+  dualPaneFolderWidth: 200,
+  dualPaneFolderHeight: 200,
+  dualPaneRatio: 0.43,
+  dualPaneSort: "name",
+  dualPaneDescendants: false,
+  dualPaneLayout: "auto",
+  includeFolders: true,
+  treeGuidesEnabled: false,
+  openOnDragRelease: true,
+  soundEnabled: false,
+  soundStyle: "soft",
+  pitchScaleEnabled: false,
+  releaseSoundEnabled: false,
+  orbStyle: "default",
+  todayTrailEnabled: true,
+  frequentMagnetsEnabled: true,
+  autoExpandFoldersOnDrag: true,
+  followActiveFile: "reveal",
+  activity: {
+    todayKey: "",
+    todayPaths: [],
+    pinnedPaths: [],
+    fileStats: {}
+  },
+  explorerOrder: {
+    enabled: true,
+    newItems: "top",
+    folders: {},
+    pinned: [],
+    flexplorerImported: false
+  },
+  licenseCode: ""
+};
+var FOLLOW_ACTIVE_FILE_MODES = ["off", "reveal", "focus"];
+function normalizeFollowActiveFile(value) {
+  return FOLLOW_ACTIVE_FILE_MODES.includes(value) ? value : "reveal";
+}
+function resolveFollowActiveFile(data) {
+  const saved = data ? data.followActiveFile : void 0;
+  if (data && data.dualPaneEnabled === true && data.dualPaneFollowActive === false && saved !== "focus") return "off";
+  return normalizeFollowActiveFile(saved);
+}
+
 // src/dual-pane/folder-browser.js
 var CrispFolderBrowser = class {
   constructor(plugin, nativeContainer) {
@@ -3392,7 +3438,7 @@ var CrispFolderBrowser = class {
     return menu;
   }
   revealActive(force = false) {
-    if (!force && !this.plugin.settings.dualPaneFollowActive) return false;
+    if (!force && normalizeFollowActiveFile(this.plugin.settings.followActiveFile) === "off") return false;
     const file = this.plugin.app.workspace.getActiveFile();
     if (!file) return false;
     const present = this.entries?.some((entry) => entry.path === file.path);
@@ -3400,6 +3446,13 @@ var CrispFolderBrowser = class {
     this.syncActiveFile();
     this.focusEntry(file.path, false);
     return true;
+  }
+  // Shortcut for the shared「跟随当前文件」setting; turning it back on uses the default mode.
+  toggleFollowActive() {
+    const following = normalizeFollowActiveFile(this.plugin.settings.followActiveFile) !== "off";
+    this.plugin.settings.followActiveFile = following ? "off" : "reveal";
+    this.plugin.saveSettings();
+    if (!following) this.revealActive(true);
   }
   focusEntry(path, focus = true) {
     const index = (this.entries || []).findIndex((entry) => entry.path === path);
@@ -3891,11 +3944,7 @@ var CrispFolderBrowser = class {
     }
     menu.addSeparator();
     menu.addItem((item) => item.setTitle("\u5305\u542B\u5B50\u6587\u4EF6\u5939\u7B14\u8BB0").setIcon("layers").setChecked(this.descendants).onClick(() => this.setDescendants(!this.descendants)));
-    menu.addItem((item) => item.setTitle("\u81EA\u52A8\u8DDF\u968F\u5F53\u524D\u6587\u4EF6").setIcon("crosshair").setChecked(Boolean(this.plugin.settings.dualPaneFollowActive)).onClick(() => {
-      this.plugin.settings.dualPaneFollowActive = !this.plugin.settings.dualPaneFollowActive;
-      this.plugin.saveSettings();
-      if (this.plugin.settings.dualPaneFollowActive) this.revealActive(true);
-    }));
+    menu.addItem((item) => item.setTitle("\u81EA\u52A8\u8DDF\u968F\u5F53\u524D\u6587\u4EF6").setIcon("crosshair").setChecked(normalizeFollowActiveFile(this.plugin.settings.followActiveFile) !== "off").onClick(() => this.toggleFollowActive()));
     menu.addSeparator();
     for (const [mode, title] of [["auto", "\u81EA\u52A8\u5E03\u5C40"], ["horizontal", "\u5DE6\u53F3\u5206\u680F"], ["vertical", "\u4E0A\u4E0B\u5206\u680F"]]) {
       menu.addItem((item) => item.setTitle(title).setChecked((this.plugin.settings.dualPaneLayout || "auto") === mode).onClick(() => {
@@ -5145,7 +5194,7 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new Setting(interactionBody).setName("\u8DDF\u968F\u5F53\u524D\u6587\u4EF6").setDesc("\u5207\u6362\u5230\u53E6\u4E00\u4E2A\u6587\u4EF6\u65F6\uFF0C\u6587\u4EF6\u6811\u5982\u4F55\u663E\u793A\u5B83\u7684\u4F4D\u7F6E\u3002\u53EA\u7528\u4E8E\u539F\u751F\u6587\u4EF6\u6811\u3002").addDropdown(
+    new Setting(interactionBody).setName("\u8DDF\u968F\u5F53\u524D\u6587\u4EF6").setDesc("\u5207\u6362\u5230\u53E6\u4E00\u4E2A\u6587\u4EF6\u65F6\uFF0C\u6587\u4EF6\u6811\u5982\u4F55\u663E\u793A\u5B83\u7684\u4F4D\u7F6E\u3002\u53CC\u680F\u6D4F\u89C8\u53EA\u533A\u5206\u8DDF\u968F\u4E0E\u4E0D\u8DDF\u968F\uFF0C\u53F3\u952E\u83DC\u5355\u91CC\u4E5F\u80FD\u5F00\u5173\u3002").addDropdown(
       (dropdown) => dropdown.addOption("off", "\u4E0D\u81EA\u52A8\u5C55\u5F00").addOption("reveal", "\u5C55\u5F00\u6240\u5728\u6587\u4EF6\u5939").addOption("focus", "\u5C55\u5F00\u6240\u5728\u6587\u4EF6\u5939\uFF0C\u6536\u8D77\u5176\u4ED6").setValue(this.plugin.settings.followActiveFile).onChange(async (value) => {
         this.plugin.settings.followActiveFile = value;
         await this.plugin.saveSettings();
@@ -5194,48 +5243,6 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
     );
   }
 };
-
-// src/settings.js
-var DEFAULT_SETTINGS = {
-  dualPaneEnabled: false,
-  dualPaneFolderWidth: 200,
-  dualPaneFolderHeight: 200,
-  dualPaneRatio: 0.43,
-  dualPaneSort: "name",
-  dualPaneFollowActive: true,
-  dualPaneDescendants: false,
-  dualPaneLayout: "auto",
-  includeFolders: true,
-  treeGuidesEnabled: false,
-  openOnDragRelease: true,
-  soundEnabled: false,
-  soundStyle: "soft",
-  pitchScaleEnabled: false,
-  releaseSoundEnabled: false,
-  orbStyle: "default",
-  todayTrailEnabled: true,
-  frequentMagnetsEnabled: true,
-  autoExpandFoldersOnDrag: true,
-  followActiveFile: "reveal",
-  activity: {
-    todayKey: "",
-    todayPaths: [],
-    pinnedPaths: [],
-    fileStats: {}
-  },
-  explorerOrder: {
-    enabled: true,
-    newItems: "top",
-    folders: {},
-    pinned: [],
-    flexplorerImported: false
-  },
-  licenseCode: ""
-};
-var FOLLOW_ACTIVE_FILE_MODES = ["off", "reveal", "focus"];
-function normalizeFollowActiveFile(value) {
-  return FOLLOW_ACTIVE_FILE_MODES.includes(value) ? value : "reveal";
-}
 
 // src/main.js
 var CrispFileExplorerPlugin = class extends Plugin {
@@ -5482,7 +5489,8 @@ var CrispFileExplorerPlugin = class extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     this.settings.orbStyle = normalizeOrbStyle(this.settings.orbStyle);
     this.settings.soundStyle = normalizeSoundStyle(this.settings.soundStyle);
-    this.settings.followActiveFile = normalizeFollowActiveFile(this.settings.followActiveFile);
+    this.settings.followActiveFile = resolveFollowActiveFile(data);
+    delete this.settings.dualPaneFollowActive;
     this.settings.activity = normalizeActivity(this.settings.activity);
     this.settings.explorerOrder = normalizeExplorerOrder(this.settings.explorerOrder);
     this.ensureTodayActivity();

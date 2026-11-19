@@ -1,6 +1,6 @@
 # Crisp File Explorer 维护说明
 
-当前版本：v0.5.6
+当前版本：v0.5.7
 
 作者：letschips（小红书博主）
 
@@ -13,6 +13,11 @@
 - 动画帧只更新 orb 附近的刻度与标题，普通滚动不会重新测量整棵文件树。
 - 每个文件浏览器面板拥有独立控制器，并支持 Obsidian 独立窗口中的文件浏览器。
 - 智能磁吸综合近期使用与打开频率，固定点优先，总数最多 8 个。
+
+## v0.5.7 维护范围
+
+- 双栏 `revealActive()` 改读 `followActiveFile`（只区分 off 与跟随），右键菜单开关走 `toggleFollowActive()`，重新打开时用 `reveal`。
+- 去掉 `dualPaneFollowActive`：`resolveFollowActiveFile()` 在加载时迁移一次——双栏开启且旧开关为 false 时视为 `off`（已选 `focus` 的除外），随后删除旧键。
 
 ## v0.5.6 维护范围
 
