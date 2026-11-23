@@ -3289,3 +3289,30 @@ test("rail elements never get their own compositor layer (translucent windows ke
   assert.doesNotMatch(source, /translate3d|translateZ|perspective\(/);
   assert.doesNotMatch(readStyles(), /will-change\s*:\s*transform/);
 });
+
+test("browsing notes writes data.json at most once per quiet spell, and quitting still saves the last visits", async () => {
+  const delays = [];
+  const { PluginClass, scheduledTimers, context } = loadPluginRuntime({
+    window: { setTimeout(callback, ms) { delays.push(ms); const id = delays.length; scheduledTimers.set(id, callback); return id; } },
+  });
+  const plugin = Object.create(PluginClass.prototype);
+  context.applyFileExplorerEntitlement(plugin, true);
+  let saveCount = 0;
+  plugin.settings = { todayTrailEnabled: true, frequentMagnetsEnabled: true, activity: { todayKey: "", todayPaths: [], fileStats: {} } };
+  plugin.activitySaveTimer = null;
+  plugin.saveSettings = async () => { saveCount += 1; };
+  plugin.scheduleRefresh = () => {};
+
+  plugin.recordFileActivity({ path: "one.md" });
+  // Each save rewrites the whole data.json (custom order included) in an iCloud vault and reads it back.
+  assert.ok(delays.at(-1) >= 5000, `activity save waits ${delays.at(-1)}ms`);
+  assert.equal(saveCount, 0);
+
+  const handlers = {};
+  plugin.app = { workspace: { on: (name, fn) => { handlers[name] = fn; return { name }; } } };
+  plugin.registerEvent = () => {};
+  plugin.registerQuitFlush();
+  await handlers.quit();
+  assert.equal(saveCount, 1, "quitting flushes the pending activity save");
+  assert.equal(plugin.activitySaveTimer, null);
+});

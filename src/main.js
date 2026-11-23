@@ -220,6 +220,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
         this.scheduleActiveReveal({ transition: !isAlreadyOpen });
       }
     }));
+    this.registerQuitFlush();
     this.registerEvent(this.app.workspace.on("file-open", (file) => {
       this.recordFileActivity(file);
       const isAlreadyOpen = Boolean(
@@ -445,6 +446,15 @@ export default class CrispFileExplorerPlugin extends Plugin {
         console.debug("Crisp File Explorer activity save failed", error);
       }
     }, ACTIVITY_SAVE_DELAY_MS);
+  }
+
+  registerQuitFlush() {
+    // quit 传入的 tasks 让 Obsidian 等这次写盘完成再退出
+    this.registerEvent(this.app.workspace.on("quit", (tasks) => {
+      const pending = this.flushActivitySave();
+      if (pending && typeof tasks?.add === "function") tasks.add(() => pending);
+      return pending;
+    }));
   }
 
   flushActivitySave() {

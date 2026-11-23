@@ -62,7 +62,8 @@ export const TODAY_TRAIL_LIMIT = 140;
 
 export const FOLDER_AUTO_EXPAND_DELAY_MS = 420;
 
-export const ACTIVITY_SAVE_DELAY_MS = 240;
+// 0.5.8：每次保存都会把整个 data.json（含自定义排序）写盘并读回核对；浏览笔记时攒 8 秒再写，退出、停用时立即写
+export const ACTIVITY_SAVE_DELAY_MS = 8000;
 
 export const SPRING = {
   stiffness: 700, // 临界阻尼：点击切换快速到位、不反弹

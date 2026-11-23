@@ -73,7 +73,7 @@ var SMART_MAGNET_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1e3;
 var FILE_STATS_LIMIT = 240;
 var TODAY_TRAIL_LIMIT = 140;
 var FOLDER_AUTO_EXPAND_DELAY_MS = 420;
-var ACTIVITY_SAVE_DELAY_MS = 240;
+var ACTIVITY_SAVE_DELAY_MS = 8e3;
 var SPRING = {
   stiffness: 700,
   // 临界阻尼：点击切换快速到位、不反弹
@@ -5427,6 +5427,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
         this.scheduleActiveReveal({ transition: !isAlreadyOpen });
       }
     }));
+    this.registerQuitFlush();
     this.registerEvent(this.app.workspace.on("file-open", (file) => {
       this.recordFileActivity(file);
       const isAlreadyOpen = Boolean(
@@ -5629,6 +5630,13 @@ var CrispFileExplorerPlugin = class extends Plugin {
         console.debug("Crisp File Explorer activity save failed", error);
       }
     }, ACTIVITY_SAVE_DELAY_MS);
+  }
+  registerQuitFlush() {
+    this.registerEvent(this.app.workspace.on("quit", (tasks) => {
+      const pending = this.flushActivitySave();
+      if (pending && typeof tasks?.add === "function") tasks.add(() => pending);
+      return pending;
+    }));
   }
   flushActivitySave() {
     if (!this.activitySaveTimer) return null;
