@@ -1,4 +1,4 @@
-import { clearLicenseVerificationCache, UNLICENSED_STATUS, describeLicenseStatus } from "./license.js";
+import { clearLicenseVerificationCache, normalizeLicenseCode, UNLICENSED_STATUS, describeLicenseStatus } from "./license.js";
 import { fileExplorerEntitled } from "./entitlement.js";
 import { PluginSettingTab, Setting, Notice } from "./obsidian.js";
 import { normalizeOrbStyle, normalizeSoundStyle } from "./orb/styles.js";
@@ -111,7 +111,7 @@ export class CrispFileExplorerSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.licenseCode)
         .onChange(async (value) => {
           clearLicenseVerificationCache();
-          this.plugin.settings.licenseCode = value.trim();
+          this.plugin.settings.licenseCode = normalizeLicenseCode(value);
           await this.plugin.saveSettings();
           const wasLicensed = fileExplorerEntitled(this.plugin);
           await this.plugin.refreshLicense({ online: false });

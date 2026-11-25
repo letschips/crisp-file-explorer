@@ -107,9 +107,20 @@ export function clearLicenseVerificationCache() {
   licenseVerificationCache.clear();
 }
 
+/**
+ * Chat apps mangle long codes when they are copied: line breaks, spaces (incl. full-width/NBSP),
+ * zero-width characters, and surrounding text such as "卡密：…。". Returns the bare code.
+ */
+export function normalizeLicenseCode(input) {
+  if (typeof input !== "string") return "";
+  const compact = input.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
+  const match = compact.match(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/);
+  return match ? match[0] : compact;
+}
+
 // Online checks are cached per session for 15 minutes; signature-only checks are never cached.
 export function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explorer", skipOnline = false) {
-  const trimmed = (licenseCode || "").trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (skipOnline) return verifyLicenseCodeUncached(trimmed, targetPluginId, true);
   return licenseVerificationCache.verify(trimmed, targetPluginId, () => (
     verifyLicenseCodeUncached(trimmed, targetPluginId, false)
@@ -117,7 +128,7 @@ export function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-expl
 }
 
 async function verifyLicenseCodeUncached(licenseCode, targetPluginId = "crisp-file-explorer", skipOnline = false) {
-  const trimmed = (licenseCode || "").trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (!trimmed) return { valid: false, reason: "授权码为空" };
   const parts = trimmed.split(".");
   if (parts.length !== 2) return { valid: false, reason: "授权码格式无效" };
@@ -201,6 +212,84 @@ async function verifyLicenseCodeUncached(licenseCode, targetPluginId = "crisp-fi
 }
 
 export const LICENSE_PLUGIN_ID = "crisp-file-explorer";
+
+// Every paid Crisp plugin; module constant so nothing on a plugin instance can widen the scan.
+const CRISP_SIBLING_PLUGIN_IDS = [
+  "crisp-annotations", "crisp-asr", "crisp-base", "crisp-file-explorer", "crisp-focus", "crisp-mind",
+  "crisp-pets", "crisp-pulse", "crisp-reading-rail", "crisp-recall", "crisp-ripple", "crisp-search",
+  "crisp-tempo", "crisp-visual",
+];
+
+/** Codes saved by sibling Crisp plugins in this vault that pass the local signature check (read-only scan). */
+export async function discoverVaultCrispLicenses(app, targetPluginId = LICENSE_PLUGIN_ID, limit = 5) {
+  if (!app) return [];
+  const candidates = [];
+  const seen = new Set();
+  const add = (code) => {
+    const clean = normalizeLicenseCode(code);
+    if (!clean.includes(".") || seen.has(clean)) return;
+    seen.add(clean);
+    candidates.push(clean);
+  };
+  for (const pid of CRISP_SIBLING_PLUGIN_IDS) {
+    if (pid === targetPluginId) continue;
+    const p = app.plugins?.plugins?.[pid];
+    add(p?.settings?.licenseCode);
+    add(p?.settings?.licenseKey);
+    add(p?.data?.licenseCode);
+    add(p?.data?.licenseKey);
+  }
+  try {
+    const adapter = app.vault?.adapter;
+    if (adapter && typeof adapter.list === "function") {
+      const pluginsDir = `${app.vault?.configDir || ".obsidian"}/plugins`;
+      if (await adapter.exists(pluginsDir)) {
+        const listing = await adapter.list(pluginsDir);
+        for (const folder of listing.folders || []) {
+          const name = folder.split("/").pop() || "";
+          if (!name.startsWith("crisp-") || name === targetPluginId) continue;
+          const dataPath = `${folder}/data.json`;
+          if (!(await adapter.exists(dataPath))) continue;
+          try {
+            const data = JSON.parse(await adapter.read(dataPath));
+            add(data?.licenseCode || data?.licenseKey || data?.license);
+          } catch {
+            // a damaged data.json of another plugin is skipped
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.debug("Crisp File Explorer license scan error:", error);
+  }
+  const valid = [];
+  for (const code of candidates) {
+    if (valid.length >= limit) break;
+    if ((await verifyLicenseCode(code, targetPluginId, true)).valid) valid.push(code);
+  }
+  return valid;
+}
+
+/**
+ * Startup, once: when the stored code is empty or no longer passes the online check, take the first
+ * sibling code that passes online and hand it to `persistCode`. Returns the adopted code or null.
+ * It only saves; the caller re-runs the normal license check, which is what actually grants access.
+ */
+export async function adoptSiblingLicense({ app, targetPluginId = LICENSE_PLUGIN_ID, getCode, persistCode, isStale }) {
+  const own = getCode();
+  if (own && (await verifyLicenseCode(own, targetPluginId)).valid) return null;
+  for (const candidate of await discoverVaultCrispLicenses(app, targetPluginId)) {
+    if (isStale()) return null;
+    if (candidate === normalizeLicenseCode(own)) continue;
+    const result = await verifyLicenseCode(candidate, targetPluginId);
+    if (isStale()) return null;
+    if (!result.valid) continue;
+    if (getCode() !== own) return null;
+    await persistCode(candidate);
+    return candidate;
+  }
+  return null;
+}
 
 export const UNLICENSED_STATUS = "❌ 未激活（Crisp File Explorer 需激活后使用，请输入授权码）";
 

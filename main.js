@@ -4200,13 +4200,19 @@ var licenseVerificationCache = createLicenseVerificationCache(LICENSE_CACHE_TTL_
 function clearLicenseVerificationCache() {
   licenseVerificationCache.clear();
 }
+function normalizeLicenseCode(input) {
+  if (typeof input !== "string") return "";
+  const compact = input.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
+  const match = compact.match(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/);
+  return match ? match[0] : compact;
+}
 function verifyLicenseCode(licenseCode, targetPluginId = "crisp-file-explorer", skipOnline = false) {
-  const trimmed = (licenseCode || "").trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (skipOnline) return verifyLicenseCodeUncached(trimmed, targetPluginId, true);
   return licenseVerificationCache.verify(trimmed, targetPluginId, () => verifyLicenseCodeUncached(trimmed, targetPluginId, false));
 }
 async function verifyLicenseCodeUncached(licenseCode, targetPluginId = "crisp-file-explorer", skipOnline = false) {
-  const trimmed = (licenseCode || "").trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (!trimmed) return { valid: false, reason: "\u6388\u6743\u7801\u4E3A\u7A7A" };
   const parts = trimmed.split(".");
   if (parts.length !== 2) return { valid: false, reason: "\u6388\u6743\u7801\u683C\u5F0F\u65E0\u6548" };
@@ -4277,6 +4283,84 @@ async function verifyLicenseCodeUncached(licenseCode, targetPluginId = "crisp-fi
   }
 }
 var LICENSE_PLUGIN_ID = "crisp-file-explorer";
+var CRISP_SIBLING_PLUGIN_IDS = [
+  "crisp-annotations",
+  "crisp-asr",
+  "crisp-base",
+  "crisp-file-explorer",
+  "crisp-focus",
+  "crisp-mind",
+  "crisp-pets",
+  "crisp-pulse",
+  "crisp-reading-rail",
+  "crisp-recall",
+  "crisp-ripple",
+  "crisp-search",
+  "crisp-tempo",
+  "crisp-visual"
+];
+async function discoverVaultCrispLicenses(app, targetPluginId = LICENSE_PLUGIN_ID, limit = 5) {
+  if (!app) return [];
+  const candidates = [];
+  const seen = /* @__PURE__ */ new Set();
+  const add = (code) => {
+    const clean = normalizeLicenseCode(code);
+    if (!clean.includes(".") || seen.has(clean)) return;
+    seen.add(clean);
+    candidates.push(clean);
+  };
+  for (const pid of CRISP_SIBLING_PLUGIN_IDS) {
+    if (pid === targetPluginId) continue;
+    const p = app.plugins?.plugins?.[pid];
+    add(p?.settings?.licenseCode);
+    add(p?.settings?.licenseKey);
+    add(p?.data?.licenseCode);
+    add(p?.data?.licenseKey);
+  }
+  try {
+    const adapter = app.vault?.adapter;
+    if (adapter && typeof adapter.list === "function") {
+      const pluginsDir = `${app.vault?.configDir || ".obsidian"}/plugins`;
+      if (await adapter.exists(pluginsDir)) {
+        const listing = await adapter.list(pluginsDir);
+        for (const folder of listing.folders || []) {
+          const name = folder.split("/").pop() || "";
+          if (!name.startsWith("crisp-") || name === targetPluginId) continue;
+          const dataPath = `${folder}/data.json`;
+          if (!await adapter.exists(dataPath)) continue;
+          try {
+            const data = JSON.parse(await adapter.read(dataPath));
+            add(data?.licenseCode || data?.licenseKey || data?.license);
+          } catch {
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.debug("Crisp File Explorer license scan error:", error);
+  }
+  const valid = [];
+  for (const code of candidates) {
+    if (valid.length >= limit) break;
+    if ((await verifyLicenseCode(code, targetPluginId, true)).valid) valid.push(code);
+  }
+  return valid;
+}
+async function adoptSiblingLicense({ app, targetPluginId = LICENSE_PLUGIN_ID, getCode, persistCode, isStale }) {
+  const own = getCode();
+  if (own && (await verifyLicenseCode(own, targetPluginId)).valid) return null;
+  for (const candidate of await discoverVaultCrispLicenses(app, targetPluginId)) {
+    if (isStale()) return null;
+    if (candidate === normalizeLicenseCode(own)) continue;
+    const result = await verifyLicenseCode(candidate, targetPluginId);
+    if (isStale()) return null;
+    if (!result.valid) continue;
+    if (getCode() !== own) return null;
+    await persistCode(candidate);
+    return candidate;
+  }
+  return null;
+}
 var UNLICENSED_STATUS = "\u274C \u672A\u6FC0\u6D3B\uFF08Crisp File Explorer \u9700\u6FC0\u6D3B\u540E\u4F7F\u7528\uFF0C\u8BF7\u8F93\u5165\u6388\u6743\u7801\uFF09";
 function describeLicenseStatus(result) {
   if (!result || !result.valid || !result.payload) {
@@ -5078,7 +5162,7 @@ var CrispFileExplorerSettingTab = class extends PluginSettingTab {
     }
     new Setting(licenseGroup).setName("\u8F93\u5165\u6388\u6743\u7801").setDesc("\u7C98\u8D34\u8D2D\u4E70\u83B7\u53D6\u7684 Crisp Suite \u6388\u6743\u7801\u3002\u6FC0\u6D3B\u65F6\u4F1A\u8054\u7F51\u6821\u9A8C\u8BBE\u5907\u6570\u91CF\uFF0C\u7F51\u7EDC\u4E0D\u53EF\u7528\u65F6\u964D\u7EA7\u4E3A\u672C\u5730\u7B7E\u540D\u9A8C\u8BC1\uFF1B\u7ED3\u679C\u5728\u5F53\u524D\u4F1A\u8BDD\u7F13\u5B58 15 \u5206\u949F\u3002").addText((text) => text.setPlaceholder("\u7C98\u8D34 Crisp \u6388\u6743\u7801...").setValue(this.plugin.settings.licenseCode).onChange(async (value) => {
       clearLicenseVerificationCache();
-      this.plugin.settings.licenseCode = value.trim();
+      this.plugin.settings.licenseCode = normalizeLicenseCode(value);
       await this.plugin.saveSettings();
       const wasLicensed = fileExplorerEntitled(this.plugin);
       await this.plugin.refreshLicense({ online: false });
@@ -5280,7 +5364,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       this.layoutReady = true;
       if (this.unloading) return;
-      this.refreshLicense({ online: true, notify: true }).catch((error) => {
+      this.refreshLicense({ online: true, notify: true }).then(() => this.inheritSiblingLicense()).catch((error) => {
         console.debug("Crisp File Explorer license check failed", error);
       });
     });
@@ -5318,7 +5402,7 @@ var CrispFileExplorerPlugin = class extends Plugin {
   // can still revoke it. Network outages keep the local result, as before.
   async refreshLicense({ online = true, notify = false } = {}) {
     const seq = ++this.licenseCheckSeq;
-    const code = this.settings.licenseCode;
+    const code = normalizeLicenseCode(this.settings.licenseCode);
     const local = code ? await verifyLicenseCode(code, LICENSE_PLUGIN_ID, true) : { valid: false, reason: "\u6388\u6743\u7801\u4E3A\u7A7A" };
     if (this.unloading || seq !== this.licenseCheckSeq) return local;
     if (local.valid !== true) {
@@ -5338,6 +5422,21 @@ var CrispFileExplorerPlugin = class extends Plugin {
       if (notify) new Notice(`\u{1F512} Crisp File Explorer \u6388\u6743\u672A\u901A\u8FC7\uFF08${remote.reason}\uFF09`);
     }
     return remote;
+  }
+  // Runs once after startup. A sibling's code is only saved here; refreshLicense then verifies it
+  // and sets the gate, so there is no separate way to switch the plugin on.
+  async inheritSiblingLicense() {
+    const adopted = await adoptSiblingLicense({
+      app: this.app,
+      targetPluginId: LICENSE_PLUGIN_ID,
+      getCode: () => this.settings.licenseCode,
+      persistCode: async (code) => {
+        this.settings.licenseCode = code;
+        await this.saveSettings();
+      },
+      isStale: () => this.unloading
+    });
+    if (adopted && !this.unloading) await this.refreshLicense({ online: true });
   }
   // Brings the views in line with the gate. It reads the gate itself, so calling it cannot unlock.
   applyLicenseState() {

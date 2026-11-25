@@ -3,7 +3,7 @@ import { INTERACTION_LOCK_MS, ACTIVE_REVEAL_RETRY_DELAYS, SMART_MAGNET_LIMIT, FI
 import { getOwnerDocument, isConnectedToOwnerDocument } from "./dom/owner-window.js";
 import { CrispFolderBrowser } from "./dual-pane/folder-browser.js";
 import { crispRegisterIcons } from "./dual-pane/helpers.js";
-import { verifyLicenseCode, LICENSE_PLUGIN_ID } from "./license.js";
+import { verifyLicenseCode, adoptSiblingLicense, normalizeLicenseCode, LICENSE_PLUGIN_ID } from "./license.js";
 import { applyFileExplorerEntitlement, fileExplorerEntitled } from "./entitlement.js";
 import { Plugin, Notice, normalizePath } from "./obsidian.js";
 import { normalizeOrbStyle, resolveOrbStyle, normalizeSoundStyle, resolveSoundStyle } from "./orb/styles.js";
@@ -52,9 +52,11 @@ export default class CrispFileExplorerPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       this.layoutReady = true;
       if (this.unloading) return;
-      this.refreshLicense({ online: true, notify: true }).catch((error) => {
-        console.debug("Crisp File Explorer license check failed", error);
-      });
+      this.refreshLicense({ online: true, notify: true })
+        .then(() => this.inheritSiblingLicense())
+        .catch((error) => {
+          console.debug("Crisp File Explorer license check failed", error);
+        });
     });
 
     this.addCommand({
@@ -96,7 +98,7 @@ export default class CrispFileExplorerPlugin extends Plugin {
   // can still revoke it. Network outages keep the local result, as before.
   async refreshLicense({ online = true, notify = false } = {}) {
     const seq = ++this.licenseCheckSeq;
-    const code = this.settings.licenseCode;
+    const code = normalizeLicenseCode(this.settings.licenseCode);
     const local = code
       ? await verifyLicenseCode(code, LICENSE_PLUGIN_ID, true)
       : { valid: false, reason: "授权码为空" };
@@ -119,6 +121,22 @@ export default class CrispFileExplorerPlugin extends Plugin {
       if (notify) new Notice(`🔒 Crisp File Explorer 授权未通过（${remote.reason}）`);
     }
     return remote;
+  }
+
+  // Runs once after startup. A sibling's code is only saved here; refreshLicense then verifies it
+  // and sets the gate, so there is no separate way to switch the plugin on.
+  async inheritSiblingLicense() {
+    const adopted = await adoptSiblingLicense({
+      app: this.app,
+      targetPluginId: LICENSE_PLUGIN_ID,
+      getCode: () => this.settings.licenseCode,
+      persistCode: async (code) => {
+        this.settings.licenseCode = code;
+        await this.saveSettings();
+      },
+      isStale: () => this.unloading,
+    });
+    if (adopted && !this.unloading) await this.refreshLicense({ online: true });
   }
 
   // Brings the views in line with the gate. It reads the gate itself, so calling it cannot unlock.
