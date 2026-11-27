@@ -4316,6 +4316,8 @@ async function discoverVaultCrispLicenses(app, targetPluginId = LICENSE_PLUGIN_I
     add(p?.settings?.licenseKey);
     add(p?.data?.licenseCode);
     add(p?.data?.licenseKey);
+    add(p?.options?.licenseCode);
+    add(p?.licenseKey);
   }
   try {
     const adapter = app.vault?.adapter;
@@ -4331,6 +4333,7 @@ async function discoverVaultCrispLicenses(app, targetPluginId = LICENSE_PLUGIN_I
           try {
             const data = JSON.parse(await adapter.read(dataPath));
             add(data?.licenseCode || data?.licenseKey || data?.license);
+            add(data?.settings?.licenseCode || data?.settings?.licenseKey);
           } catch {
           }
         }

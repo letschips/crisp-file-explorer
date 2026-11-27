@@ -238,6 +238,8 @@ export async function discoverVaultCrispLicenses(app, targetPluginId = LICENSE_P
     add(p?.settings?.licenseKey);
     add(p?.data?.licenseCode);
     add(p?.data?.licenseKey);
+    add(p?.options?.licenseCode);
+    add(p?.licenseKey);
   }
   try {
     const adapter = app.vault?.adapter;
@@ -253,6 +255,8 @@ export async function discoverVaultCrispLicenses(app, targetPluginId = LICENSE_P
           try {
             const data = JSON.parse(await adapter.read(dataPath));
             add(data?.licenseCode || data?.licenseKey || data?.license);
+            // Crisp Pulse keeps its settings nested under `settings`.
+            add(data?.settings?.licenseCode || data?.settings?.licenseKey);
           } catch {
             // a damaged data.json of another plugin is skipped
           }

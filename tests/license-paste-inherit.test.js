@@ -166,3 +166,13 @@ test("inherit: an expired own code falls through to a sibling code", async () =>
   const { app } = fakeApp({ "crisp-mind": { licenseCode: CLEAN } });
   assert.equal(await adopt(lib, app, expired).promise, CLEAN);
 });
+
+// Crisp Pulse keeps its code under `settings`; Pets and Days keep theirs under `options`.
+test("inherit: Crisp Pulse's nested settings on disk and a loaded sibling's options are read", async () => {
+  const { lib } = load();
+  const B = makeCode({ licenseId: "TEST-B" });
+  const { app } = fakeApp({ "crisp-pulse": { settings: { licenseCode: CLEAN } } });
+  assert.deepEqual([...(await lib.discoverVaultCrispLicenses(app, "crisp-file-explorer"))], [CLEAN]);
+  app.plugins.plugins["crisp-focus"] = { options: { licenseCode: B } };
+  assert.deepEqual([...(await lib.discoverVaultCrispLicenses(app, "crisp-file-explorer"))], [B, CLEAN]);
+});
